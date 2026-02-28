@@ -55,7 +55,7 @@ def get_logger() -> logging.Logger:
     ))
 
     # File handler
-    log_dir = Path("./logs")
+    log_dir = Path("../logs")
     log_dir.mkdir(exist_ok=True)
     fh = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
     fh.setFormatter(logging.Formatter(
