@@ -120,7 +120,7 @@ class Coinbase(ICEX):
     fee_usd = fee_eth * self.get_eth_price()
     return max(fee_usd * 2 + 0.01, 0.11)  # Ensure a minimum fee of $0.11
 
-  def get_deposit_addresses(self, currency: Tokens, network: Network) -> str:
+  def get_deposit_addresses(self, currency: Tokens, network: Network) -> str | None:
     """List withdrawal addresses for a given currency."""
 
     account_uuid = self.get_account_uuid(currency)
