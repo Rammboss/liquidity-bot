@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import ccxt
-import ccxt.pro as ccxtpro
 import dotenv
 import requests
 from coinbase import jwt_generator
@@ -23,7 +22,6 @@ from app.exchanges.ICEX import ICEX
 from blockchain.Network import Network
 from blockchain.Token import Tokens
 from logger import get_logger
-from postgres.Order import Order
 
 dotenv.load_dotenv()
 
@@ -44,16 +42,8 @@ class Coinbase(ICEX):
         'secret': secret,
         'enableRateLimit': True,
         'options': {'defaultType': 'spot'},
-
       }
     )
-
-    self.cctx_pro = ccxtpro.coinbase({
-      'apiKey': api_key,
-      'secret': secret,
-      'enableRateLimit': True,
-      'options': {'defaultType': 'spot'},
-    })
 
     self.api_key = os.getenv("COINBASE_API_KEY")
     self.api_secret = os.getenv("COINBASE_API_SECRET")
@@ -78,9 +68,6 @@ class Coinbase(ICEX):
   async def init(self):
     self.logger.info("Loading markets...")
     self.cctx.load_markets()
-    self.logger.info("Loading WS markets...")
-    await self.cctx_pro.load_markets()
-    self.logger.info("WS markets loaded.")
 
   def create_order(self, side: str, type_: str, amount: float, price: Optional[float] = None):
     side = side.lower()
@@ -194,7 +181,7 @@ class Coinbase(ICEX):
     # If no product matches, raise an error
     raise ValueError(f"No product found for tokens: {token0} / {token1}")
 
-  def order_filled(self, order: Order) -> bool:
+  def order_filled(self, order) -> bool:
     client = RESTClient(api_key=self.api_key, api_secret=self.api_secret)
 
     order: GetOrderResponse = client.get_order(order_id=order.order_id)

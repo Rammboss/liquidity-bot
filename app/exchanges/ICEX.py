@@ -25,15 +25,6 @@ class ICEX(ABC):
   async def init(self):
     pass
 
-  # @abstractmethod
-  # def _start_ticker(self):
-  #   pass
-  #
-  # @abstractmethod
-  # def get_bid_ask(self) -> Dict[str, float]:
-  #   """Return the latest bid/ask prices."""
-  #   pass
-
   def get_account_balances(self, token: Tokens, type: Literal["free", "total", "locked"]):
     balances = self.cctx.fetch_balance()
     token_str = token.to_string()
