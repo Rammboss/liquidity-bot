@@ -15,7 +15,7 @@ from web3.types import TxParams, TxReceipt
 from app.Configurations import DEFAULT_TIMEOUT_ORDERS
 from app.blockchain.Contract import Contract
 from blockchain.Token import Tokens
-from logger import get_logger
+from common.logger import get_logger
 
 ChainName = Literal[
   "ethereum",

@@ -8,7 +8,7 @@ from hexbytes import HexBytes
 from web3 import Web3
 
 from blockchain.Token import Token
-from logger import get_logger
+from common.logger import get_logger
 
 dotenv.load_dotenv()
 

@@ -10,7 +10,7 @@ from web3 import Web3
 
 from blockchain.Contract import Contract
 from database.repositories import IndexedBlockRepository, PositionRepository
-from logger import get_logger
+from common.logger import get_logger
 from blockchain.AbiService import AbiService
 from blockchain.uniswap.NoneFungibleTokenManager import NoneFungibleTokenManager
 from blockchain.uniswap.Pool import Pool

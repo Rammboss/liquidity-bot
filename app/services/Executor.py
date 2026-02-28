@@ -1,7 +1,7 @@
 import asyncio
 
 from execution.BasicTask import BasicTask
-from logger import get_logger
+from common.logger import get_logger
 
 
 class Executor:

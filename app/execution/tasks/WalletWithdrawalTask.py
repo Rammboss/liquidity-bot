@@ -6,7 +6,7 @@ from web3 import Web3
 from blockchain.Token import Token
 from blockchain.WalletService import WalletService
 from execution.BasicTask import BasicTask
-from logger import get_logger
+from common.logger import get_logger
 
 dotenv.load_dotenv()
 
@@ -64,6 +64,6 @@ class WalletWithdrawalTask(BasicTask):
     if gas_cost_usd > 1:
       raise ValueError(f"Estimated gas cost of ${gas_cost_usd:.2f} exceeds safety threshold. Aborting withdrawal.")
 
-    signed_tx = self.wallet.sign_transaction(tx)
+    signed_tx = self.wallet_service.wallet.sign_transaction(tx)
     tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     self.logger.info(f"Withdrawal transaction sent: {tx_hash.hex()}")

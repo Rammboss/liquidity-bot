@@ -6,7 +6,7 @@ from web3 import Web3
 from web3.contract import Contract as Web3Contract
 
 from blockchain.Token import Tokens
-from logger import get_logger
+from common.logger import get_logger
 
 BASE_PATH = Path(__file__).resolve().parent / "abis"
 logger = get_logger()

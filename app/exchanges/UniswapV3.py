@@ -12,7 +12,7 @@ from app.Configurations import SLIPPAGE
 from app.blockchain.Contract import Contract
 from common.errors.PriceExceededError import PriceExceededError
 from app.exchanges.IDEX import ChainName, IDEX
-from logger import get_logger
+from common.logger import get_logger
 
 
 class UniswapV3(IDEX):

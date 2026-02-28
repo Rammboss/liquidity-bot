@@ -16,7 +16,7 @@ from exchanges.UniswapV3 import UniswapV3
 from execution.tasks.ArbitrageExecuteTask import ArbitrageExecuteTask
 from execution.tasks.CoinbaseWithdrawalTask import CoinbaseWithdrawalTask
 from execution.tasks.WalletWithdrawalTask import WalletWithdrawalTask
-from logger import get_logger
+from common.logger import get_logger
 from services.Executor import Executor
 
 dotenv.load_dotenv()

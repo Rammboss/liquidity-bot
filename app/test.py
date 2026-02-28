@@ -10,9 +10,7 @@ from blockchain.Network import Network
 from blockchain.Token import Token, Tokens
 from blockchain.uniswap.Pool import Pool
 from common.AccountManager import AccountManager
-from execution.tasks.CoinbaseWithdrawalTask import CoinbaseWithdrawalTask
-from execution.tasks.WalletWithdrawalTask import WalletWithdrawalTask
-from logger import get_logger
+from common.logger import get_logger
 from main import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDRESS
 from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
 

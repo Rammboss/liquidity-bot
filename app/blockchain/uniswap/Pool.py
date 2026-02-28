@@ -10,7 +10,7 @@ from web3 import Web3
 from blockchain.AbiService import AbiService
 from blockchain.Contract import Contract
 from blockchain.Token import Token, Tokens
-from logger import get_logger
+from common.logger import get_logger
 
 load_dotenv()
 

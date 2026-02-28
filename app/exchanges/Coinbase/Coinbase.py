@@ -21,7 +21,7 @@ from app.exchanges.Exchange import Exchange
 from app.exchanges.ICEX import ICEX
 from blockchain.Network import Network
 from blockchain.Token import Tokens
-from logger import get_logger
+from common.logger import get_logger
 
 dotenv.load_dotenv()
 

@@ -3,7 +3,7 @@ import asyncio
 from Configurations import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDRESS
 from blockchain.Token import Tokens
 from database.database import Database
-from logger import get_logger
+from common.logger import get_logger
 from services.Executor import Executor
 from services.IndexerService import IndexerService
 from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer

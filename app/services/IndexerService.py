@@ -11,7 +11,7 @@ from database.database import Database
 from database.models import Position
 from database.repositories import (CollectEventsRepository, IndexedBlockRepository, MintEventsRepository,
                                    PositionRepository)
-from logger import get_logger
+from common.logger import get_logger
 from blockchain.uniswap.NoneFungibleTokenManager import NoneFungibleTokenManager
 from blockchain.uniswap.Pool import Pool
 

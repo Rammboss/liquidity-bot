@@ -6,7 +6,7 @@ from eth_account.signers.local import LocalAccount
 
 from blockchain.Token import Token, Tokens
 from exchanges.Coinbase.Coinbase import Coinbase
-from logger import get_logger
+from common.logger import get_logger
 
 dotenv.load_dotenv()
 
