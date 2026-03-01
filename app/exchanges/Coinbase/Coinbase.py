@@ -309,3 +309,32 @@ class Coinbase(ICEX):
     tx = Transaction.from_dict(response.json().get("data"))
 
     return tx
+
+  def list_transactions(self, token: Tokens, tx_id: str):
+    account_uuid = self.get_account_uuid(token)
+
+    jwt_token = self._generate_jwt("GET", f"/v2/accounts/{account_uuid}/transactions")
+    url = f"{self.url_coinbase_advanced_trade_api}/v2/accounts/{account_uuid}/transactions"
+    # Send POST request
+    response = requests.get(
+      url,
+      headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+
+    # Raise error if something went wrong
+    response.raise_for_status()
+
+    tx = Transaction.from_dict(response.json().get("data"))
+
+    return tx
+
+  async def wait_till_withdrawal_confirmed(self, token: Tokens, tx_id: str, timeout: int = DEFAULT_TIMEOUT_ORDERS):
+    end_time = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < end_time:
+      tx = self.v2_list_transaction(token, tx_id)
+      if tx.status == "completed":
+        self.logger.info(f"Withdrawal {tx_id} confirmed on network {tx.network.network_name}")
+        return True
+      await asyncio.sleep(5)
+    self.logger.warning(f"Timeout waiting for withdrawal {tx_id} to be confirmed")
+    return False

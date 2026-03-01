@@ -33,7 +33,7 @@ class WalletService:
     return gas_cost_eth * eth_price
 
   def wait_tx_is_mined(self, tx_hash: Hash32 | HexBytes | HexStr, timeout: int = 120):
-    self.logger.info(f"Waiting for transaction {tx_hash} to be mined...")
+    self.logger.info(f"Waiting for transaction {tx_hash.hex()} to be mined...")
     receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
-    self.logger.info(f"Transaction {tx_hash} mined in block {receipt.blockNumber} with status {receipt.status}")
+    self.logger.info(f"Transaction {tx_hash.hex()} mined in block {receipt.blockNumber} with status {receipt.status}")
     return receipt

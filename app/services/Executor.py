@@ -20,6 +20,8 @@ class Executor:
           task = self.queue.pop(0)
           self.logger.info(f"Executing task {task.__class__.__name__} with priority {task.priority}")
           await task.run()
+        else:
+          await asyncio.sleep(1)
       except Exception as e:
         self.logger.error(f"Error executing task: {e}")
         await asyncio.sleep(5)

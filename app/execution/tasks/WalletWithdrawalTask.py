@@ -1,12 +1,14 @@
 import os
 
 import dotenv
+from telegram.constants import ParseMode
 from web3 import Web3
 
 from blockchain.Token import Token
 from blockchain.WalletService import WalletService
-from execution.BasicTask import BasicTask
+from common.TelegramServices import TelegramServices
 from common.logger import get_logger
+from execution.BasicTask import BasicTask
 
 dotenv.load_dotenv()
 
@@ -18,6 +20,7 @@ class WalletWithdrawalTask(BasicTask):
       send_token: Token,
       destination: str,
       eth_price: float,
+      telegram: TelegramServices,
       amount: float = None,
       priority: int = 5
   ):
@@ -29,6 +32,7 @@ class WalletWithdrawalTask(BasicTask):
     self.destination = destination
     self.amount = amount
     self.eth_price = eth_price
+    self.telegram = telegram
 
   async def run(self):
     raw_wallet_balance = self.send_token.contract.functions.balanceOf(self.wallet_service.wallet.address).call()
@@ -67,3 +71,11 @@ class WalletWithdrawalTask(BasicTask):
     signed_tx = self.wallet_service.wallet.sign_transaction(tx)
     tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     self.logger.info(f"Withdrawal transaction sent: {tx_hash.hex()}")
+
+    self.wallet_service.wait_tx_is_mined(tx_hash, timeout=300)
+
+    await self.telegram.native_send(
+      f"Withdrawal of {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.symbol} to {self.destination} completed! Tx Hash: {tx_hash.hex()}",
+      ParseMode.HTML)
+
+    self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")

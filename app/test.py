@@ -8,9 +8,11 @@ from app.exchanges.Coinbase.Coinbase import Coinbase
 from app.exchanges.UniswapV3 import UniswapV3
 from blockchain.Network import Network
 from blockchain.Token import Token, Tokens
+from blockchain.WalletService import WalletService
 from blockchain.uniswap.Pool import Pool
 from common.AccountManager import AccountManager
 from common.logger import get_logger
+from execution.tasks.CoinbaseWithdrawalTask import CoinbaseWithdrawalTask
 from main import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDRESS
 from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
 
@@ -55,7 +57,41 @@ async def main():
   logger = get_logger()
   logger.info("Test started")
   coinbase = Coinbase("EURC/USDC", Tokens.EURC, Tokens.USDC)
+  account_manager = AccountManager(coinbase)
+  wallet_service = WalletService()
+  w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
+
+  # 2. Account-Daten (Nutze deinen WalletService)
+  my_address = wallet_service.wallet.address
+  private_key = os.getenv("PRIVATE_KEY")  # Sicherstellen, dass der Key geladen ist
+
+  # 3. Gas-Preise abrufen (WICHTIG: Muss höher sein als die hängende TX!)
+  base_fee = w3.eth.get_block('latest')['baseFeePerGas']
+  priority_fee = w3.to_wei(2, 'gwei')  # Erhöhe dies, wenn es extrem eilig ist
+  max_fee = base_fee * 2 + priority_fee
+
+  # 4. Transaktion erstellen
+  tx = {
+    'nonce': 88,  # Die hängende Nonce
+    'to': my_address,  # An dich selbst
+    'value': 0,  # 0 ETH
+    'gas': 21000,  # Standard Transfer Gas
+    'maxFeePerGas': max_fee,
+    'maxPriorityFeePerGas': priority_fee,
+    'chainId': 1  # 1 für Ethereum Mainnet, 8453 für Base, etc.
+  }
+
+  # 5. Signieren und Senden
+  signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+  tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+
+  print(f"Replacement TX gesendet! Hash: {tx_hash.hex()}")
+
   pool = Pool(EURO_USDC_UNI_V3_POOL_ADDRESS)
+
+
+
+
   # pool_swap_fees = await pool.get_swap_costs(pool.token1.token, 1, 0)
   order = coinbase.create_order("buy", "limit", 1, 0.99)
   test1 = await  coinbase.wait_order_filled(order['id'], 120)
