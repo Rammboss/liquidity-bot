@@ -88,8 +88,6 @@ class ArbitrageExecuteTask(BasicTask):
 
     self.wallet_service.wait_tx_is_mined(HexBytes(tx_hash), timeout=500)
 
-    await asyncio.sleep(60)
-
     total_after = self.account_manager.get_total_balances()
     profit_usdc = total_after.get(Tokens.USDC) - total_before.get(Tokens.USDC)
     profit_eurc = total_after.get(Tokens.EURC) - total_before.get(Tokens.EURC)

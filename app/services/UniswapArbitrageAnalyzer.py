@@ -259,6 +259,7 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=wallet_bal
           ))
+        await asyncio.sleep(5)
       if cb_rebasing_needed:
         cb_bal = self.account_manager.get_coinbase_balances().get(t_needed_wallet)
         self.logger.info("Add Coinbase rebalance task to queue...")
@@ -271,7 +272,7 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=cb_bal * 0.99  # to avoid bad request due invalid balance
           ))
-        await asyncio.sleep(180)
+        await asyncio.sleep(5)
     else:
       self.logger.info("Add arbitrage execution task to queue...")
       self.executor.queue.append(ArbitrageExecuteTask(
@@ -287,7 +288,7 @@ class UniswapArbitrageAnalyzer:
         eth_price=eth_price,
         telegram=self.telegram
       ))
-      await asyncio.sleep(180)
+      await asyncio.sleep(5)
 
   async def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
                             t_needed_wallet: Tokens, t_needed_cb: Tokens, usage: float
