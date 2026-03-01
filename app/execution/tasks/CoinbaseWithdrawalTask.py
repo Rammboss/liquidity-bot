@@ -54,7 +54,7 @@ class CoinbaseWithdrawalTask(BasicTask):
     response = self.coinbase.withdrawal(self.token.token, self.destination, withdraw_amount, Network.ETH)
     self.logger.info(f"Withdrawal response: {response}")
 
-    mined = await self.coinbase.wait_till_withdrawal_confirmed(self.token.token, response['data']['id'])
+    mined = self.wallet_service.wait_till_coins_arrive(self.token)
     if mined:
       self.logger.info(f"Order filled: {response['data']['id']}")
       await self.telegram.native_send(f"Order filled: {response['data']['id']}", ParseMode.HTML)

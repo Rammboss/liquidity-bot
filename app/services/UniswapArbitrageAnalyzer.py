@@ -135,42 +135,45 @@ class UniswapArbitrageAnalyzer:
     self.logger.info(f"Rebalance Analysis: {result}")
 
     while True:
-      if len(self.executor.queue) > 0:
-        self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
-        await asyncio.sleep(10)
-        continue
+      try:
+        if len(self.executor.queue) > 0:
+          self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
+          await asyncio.sleep(10)
+          continue
 
-      order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
-      ask_coinbase = order_book.pricebook.asks[0]
-      bid_coinbase = order_book.pricebook.bids[0]
+        order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
+        ask_coinbase = order_book.pricebook.asks[0]
+        bid_coinbase = order_book.pricebook.bids[0]
 
-      ask_uni = self.pool.get_ask(self.token1, self.target_qty) / self.target_qty
-      bid_uni = self.pool.get_bid(self.token0, self.target_qty) / self.target_qty
+        ask_uni = self.pool.get_ask(self.token1, self.target_qty) / self.target_qty
+        bid_uni = self.pool.get_bid(self.token0, self.target_qty) / self.target_qty
 
-      profit_a = bid_uni - float(ask_coinbase.price)
-      profit_b = float(bid_coinbase.price) - ask_uni
+        profit_a = bid_uni - float(ask_coinbase.price)
+        profit_b = float(bid_coinbase.price) - ask_uni
 
-      if profit_a > 0:
-        await self._process_opportunity(
-          side="A",
-          profit_raw=profit_a,
-          target_qty=self.target_qty,
-          entry_price=bid_uni,  # Preis auf der Gegenseite
-          order_book_side=order_book.pricebook.asks,
-          is_cb_buy=True
-        )
+        if profit_a > 0:
+          await self._process_opportunity(
+            side="A",
+            profit_raw=profit_a,
+            target_qty=self.target_qty,
+            entry_price=bid_uni,  # Preis auf der Gegenseite
+            order_book_side=order_book.pricebook.asks,
+            is_cb_buy=True
+          )
+        elif profit_b > 0:
+          await self._process_opportunity(
+            side="B",
+            profit_raw=profit_b,
+            target_qty=self.target_qty,
+            entry_price=ask_uni,
+            order_book_side=order_book.pricebook.bids,
+            is_cb_buy=False
+          )
 
-      if profit_b > 0 >= profit_a:  # Nur Side B prüfen, wenn Side A nicht schon profitabel ist
-        await self._process_opportunity(
-          side="B",
-          profit_raw=profit_b,
-          target_qty=self.target_qty,
-          entry_price=ask_uni,
-          order_book_side=order_book.pricebook.bids,
-          is_cb_buy=False
-        )
-
-      await asyncio.sleep(12)
+        await asyncio.sleep(12)
+      except Exception as e:
+        self.logger.error(f"Error in main loop: {e}")
+        await asyncio.sleep(30)
 
   async def _process_opportunity(self, side: str, profit_raw: float, target_qty: float,
                                  entry_price: float, order_book_side: list, is_cb_buy: bool
@@ -259,7 +262,7 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=wallet_bal
           ))
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
       if cb_rebasing_needed:
         cb_bal = self.account_manager.get_coinbase_balances().get(t_needed_wallet)
         self.logger.info("Add Coinbase rebalance task to queue...")
@@ -272,7 +275,7 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=cb_bal * 0.99  # to avoid bad request due invalid balance
           ))
-        await asyncio.sleep(5)
+        await asyncio.sleep(20)
     else:
       self.logger.info("Add arbitrage execution task to queue...")
       self.executor.queue.append(ArbitrageExecuteTask(

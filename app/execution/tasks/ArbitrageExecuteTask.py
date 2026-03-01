@@ -1,5 +1,3 @@
-import asyncio
-
 from hexbytes import HexBytes
 from telegram.constants import ParseMode
 
@@ -86,14 +84,13 @@ class ArbitrageExecuteTask(BasicTask):
     await self.coinbase.wait_order_filled(order['id'])
     self.logger.info(f"Coinbase order filled: {order['id']}")
 
-    self.wallet_service.wait_tx_is_mined(HexBytes(tx_hash), timeout=500)
+    self.wallet_service.wait_tx_is_mined(HexBytes(tx_hash))
 
     total_after = self.account_manager.get_total_balances()
     profit_usdc = total_after.get(Tokens.USDC) - total_before.get(Tokens.USDC)
     profit_eurc = total_after.get(Tokens.EURC) - total_before.get(Tokens.EURC)
-    in_usdc = self.t1_start_amount if self.sell_coinbase_buy_uni else self.t1_expected_outcome * self.cb_price
-    profit_percent = (profit_usdc / in_usdc) * 100 if in_usdc > 0 else 0
-    self.logger.info(f"Profit: {profit_usdc:.2f} USDC, {profit_eurc:.2f} EURC ({profit_percent:.2f}%)")
-    await self.telegram.native_send(f"Arbitrage execution completed: Profit: {profit_usdc:.2f} USDC, {profit_eurc:.2f} EURC ({profit_percent:.2f}%)",
-                                    parse_mode=ParseMode.HTML)
+    total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price
+    profit_string = f"Total profit: {total_profit_in_usdc:.2f} USDC (USDC: {profit_usdc:.2f}, EURC: {profit_eurc:.2f})"
+    self.logger.info(profit_string)
+    await self.telegram.native_send(profit_string, parse_mode=ParseMode.HTML)
     self.logger.info("Arbitrage execution completed")
