@@ -8,6 +8,7 @@ from blockchain.Token import Token
 from blockchain.WalletService import WalletService
 from common.TelegramServices import TelegramServices
 from common.logger import get_logger
+from exchanges.Coinbase.Coinbase import Coinbase
 from execution.BasicTask import BasicTask
 
 dotenv.load_dotenv()
@@ -21,6 +22,7 @@ class WalletWithdrawalTask(BasicTask):
       destination: str,
       eth_price: float,
       telegram: TelegramServices,
+      coinbase: Coinbase,
       amount: float = None,
       priority: int = 5
   ):
@@ -33,6 +35,7 @@ class WalletWithdrawalTask(BasicTask):
     self.amount = amount
     self.eth_price = eth_price
     self.telegram = telegram
+    self.coinbase = coinbase
 
   async def run(self):
     raw_wallet_balance = self.send_token.contract.functions.balanceOf(self.wallet_service.wallet.address).call()
@@ -60,10 +63,23 @@ class WalletWithdrawalTask(BasicTask):
       "nonce": self.w3.eth.get_transaction_count(self.wallet_service.wallet.address),
     })
     gas = self.w3.eth.estimate_gas(tx)
-    gas_price_wei = tx.get("maxFeePerGas") or self.w3.eth.gas_price
-    gas_cost_eth = float(self.w3.from_wei(gas * gas_price_wei, "ether"))
-    gas_cost_usd = gas_cost_eth * self.eth_price
-    self.logger.info(f"Estimated gas cost: {gas_cost_eth:.18f} ETH = {gas_cost_usd:.4f} USD")
+
+    latest_block = self.w3.eth.get_block('latest')
+    base_fee = latest_block['baseFeePerGas']
+    # 2. Your manual Priority Fee (0.01 Gwei)
+    prio_fee = self.w3.to_wei(0.01, 'gwei')
+
+    max_fee_per_gas = int(base_fee * 1.125) + prio_fee
+    tx["maxFeePerGas"] = max_fee_per_gas
+    tx['maxPriorityFeePerGas'] = prio_fee
+
+    current_base_fee = self.w3.eth.get_block('latest')['baseFeePerGas']
+
+    # This is what you will likely actually pay
+    estimated_actual_cost = float(self.w3.from_wei(tx['gas'] * (current_base_fee + prio_fee), "ether"))
+
+    gas_cost_usd = estimated_actual_cost * self.eth_price
+    self.logger.info(f"Estimated gas cost: {estimated_actual_cost:.18f} ETH = {gas_cost_usd:.4f} USD")
 
     if gas_cost_usd > 1:
       raise ValueError(f"Estimated gas cost of ${gas_cost_usd:.2f} exceeds safety threshold. Aborting withdrawal.")
@@ -72,10 +88,16 @@ class WalletWithdrawalTask(BasicTask):
     tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     self.logger.info(f"Withdrawal transaction sent: {tx_hash.hex()}")
 
-    self.wallet_service.wait_tx_is_mined(tx_hash, timeout=300)
+    is_mined = self.wallet_service.wait_tx_is_mined(tx_hash, timeout=300)
+    self.logger.info("Tx mined.")
+    self.logger.info(f"Waiting till funds are available in coinbase...")
+    arrived_on_cb = await self.coinbase.wait_till_deposit_arrives(self.send_token)
 
-    await self.telegram.native_send(
-      f"Withdrawal of {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.symbol} to {self.destination} completed! Tx Hash: {tx_hash.hex()}",
-      ParseMode.HTML)
+    if arrived_on_cb and is_mined:
+      await self.telegram.native_send(
+        f"Withdrawal of {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.symbol} to {self.destination} completed! Tx Hash: {tx_hash.hex()}",
+        ParseMode.HTML)
 
-    self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")
+      self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")
+    else:
+      self.logger.error(f"Withdrawal transaction failed: Status mined: {is_mined}, Status coinbase: {arrived_on_cb}")
