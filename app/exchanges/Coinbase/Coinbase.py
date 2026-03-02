@@ -3,9 +3,8 @@ import json
 import os
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 
-import ccxt
 import dotenv
 import requests
 from coinbase import jwt_generator
@@ -32,19 +31,6 @@ class Coinbase(ICEX):
     self.logger = get_logger()
     self.symbol = symbol
 
-    api_key: str = os.getenv("COINBASE_API_KEY") or (_ for _ in ()).throw(RuntimeError("COINBASE_API_KEY must be set"))
-    secret: str = os.getenv("COINBASE_API_SECRET").replace('\\n', '\n') or (_ for _ in ()).throw(
-      RuntimeError("COINBASE_API_SECRET must be set"))
-
-    self.cctx = ccxt.coinbaseadvanced(
-      {
-        'apiKey': api_key,
-        'secret': secret,
-        'enableRateLimit': True,
-        'options': {'defaultType': 'spot'},
-      }
-    )
-
     self.api_key = os.getenv("COINBASE_API_KEY")
     self.api_secret = os.getenv("COINBASE_API_SECRET")
     self.base_url = "https://api.exchange.coinbase.com"
@@ -66,40 +52,93 @@ class Coinbase(ICEX):
     return jwt_generator.build_rest_jwt(jwt_uri, self.api_key, self.api_secret.replace("\\n", "\n"))
 
   async def init(self):
-    self.logger.info("Loading markets...")
-    self.cctx.load_markets()
+    self.logger.info("Coinbase client initialized")
+
+  def _advanced_trade_request(self, method: str, path: str, params: Optional[dict] = None,
+                              payload: Optional[dict] = None) -> dict:
+    jwt_token = self._generate_jwt(method, path)
+    url = f"{self.url_coinbase_advanced_trade_api}{path}"
+    response = requests.request(
+      method=method,
+      url=url,
+      headers={"Authorization": f"Bearer {jwt_token}", "Content-Type": "application/json"},
+      params=params,
+      json=payload,
+      timeout=20,
+    )
+    response.raise_for_status()
+    return response.json() if response.content else {}
 
   def create_order(self, side: str, type_: str, amount: float, price: Optional[float] = None):
     side = side.lower()
     type_ = type_.lower()
     if side not in ('buy', 'sell') or type_ not in ('limit', 'market'):
       raise ValueError("Invalid side or type")
-    params = {'postOnly': False} if type_ == 'limit' else {}
-    amount_to_use = amount / price if side.lower() == "buy" else amount
-    order = self.cctx.create_order(self.symbol, type_, side, amount_to_use, price, params)
-    self.logger.info(f"Order created: {order['id'] if order else 'None'}")
+
+    if type_ == "limit" and price is None:
+      raise ValueError("price is required for limit orders")
+
+    order_configuration: dict
+    if type_ == "market":
+      market_config = {"base_size": str(amount)}
+      if side == "buy":
+        market_config = {"quote_size": str(amount)}
+      order_configuration = {"market_market_ioc": market_config}
+    else:
+      base_size = amount / price if side == "buy" else amount
+      order_configuration = {
+        "limit_limit_gtc": {
+          "base_size": str(base_size),
+          "limit_price": str(price),
+          "post_only": False,
+        }
+      }
+
+    payload = {
+      "client_order_id": str(uuid.uuid4()),
+      "product_id": self.symbol,
+      "side": side.upper(),
+      "order_configuration": order_configuration,
+    }
+    response = self._advanced_trade_request("POST", "/api/v3/brokerage/orders", payload=payload)
+    order_id = response.get("success_response", {}).get("order_id")
+    order = {"id": order_id, "status": "open", "raw": response}
+    self.logger.info(f"Order created: {order_id if order_id else 'None'}")
     return order
 
   def get_eth_price(self):
-    ticker = self.cctx.fetch_ticker('ETH-USD')
-    return ticker['bid']
+    ticker = self._advanced_trade_request("GET", "/api/v3/brokerage/products/ETH-USD/ticker")
+    trades = ticker.get("trades", [])
+    if trades:
+      return float(trades[0]["price"])
+    pricebook = ticker.get("pricebook", {})
+    bids = pricebook.get("bids", [])
+    if bids:
+      return float(bids[0]["price"])
+    raise RuntimeError("Unable to determine ETH price from Coinbase ticker response")
 
   def cancel_order(self, order_id: str):
     try:
-      order = self.cctx.cancel_order(order_id, self.symbol)
+      order = self._advanced_trade_request(
+        "POST",
+        "/api/v3/brokerage/orders/batch_cancel",
+        payload={"order_ids": [order_id]},
+      )
       self.logger.info(f"Order canceled: {order_id}")
       return order
-    except ccxt.BaseError as e:
+    except requests.RequestException as e:
       self.logger.error(f"Error canceling order {order_id}: {e}", exc_info=True)
       return None
 
   async def wait_order_filled(self, order_id: str, timeout: int = DEFAULT_TIMEOUT_ORDERS):
     end_time = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < end_time:
-      order = self.cctx.fetch_order(order_id, self.symbol)
-      if order['status'] in ('closed', 'canceled', 'filled'):
-        self.logger.info(f"Order {order_id} filled with status: {order['status']}")
-        return order
+      order_response = self._advanced_trade_request("GET", f"/api/v3/brokerage/orders/historical/{order_id}")
+      order = order_response.get("order", {})
+      status = order.get("status", "").lower()
+      if status in ('filled', 'cancelled', 'canceled'):
+        self.logger.info(f"Order {order_id} filled with status: {status}")
+        return {"id": order_id, "status": status, "raw": order_response}
       await asyncio.sleep(0.5)
     self.logger.warning(f"Timeout waiting for order {order_id} to fill")
     return None
@@ -107,10 +146,33 @@ class Coinbase(ICEX):
   def get_trade_fee(self):
     now = datetime.now()
     if self._cached_fee is None or now - self._last_fee_update >= timedelta(minutes=30):
-      self._cached_fee = self.cctx.fetch_trading_fee(self.symbol)
+      fee_response = self._advanced_trade_request("GET", "/api/v3/brokerage/transaction_summary")
+      self._cached_fee = {
+        "maker": float(fee_response.get("fee_tier", {}).get("maker_fee_rate", 0.0)),
+        "taker": float(fee_response.get("fee_tier", {}).get("taker_fee_rate", 0.0)),
+        "raw": fee_response,
+      }
       self._last_fee_update = now
 
     return self._cached_fee
+
+  def get_account_balances(self, token: Tokens, type: Literal["free", "total", "locked"]):
+    accounts_response = self._advanced_trade_request("GET", "/api/v3/brokerage/accounts")
+    for account in accounts_response.get("accounts", []):
+      if account.get("currency") != token.to_string():
+        continue
+
+      available = float(account.get("available_balance", {}).get("value", 0.0))
+      hold = float(account.get("hold", {}).get("value", 0.0))
+      match type:
+        case "free":
+          return available
+        case "locked":
+          return hold
+        case "total":
+          return available + hold
+
+    return 0.0
 
   async def get_withdrawal_fees(self) -> float:
     """Return hardcoded withdrawal fees for a given token."""
