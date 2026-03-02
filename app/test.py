@@ -57,6 +57,8 @@ async def main():
   logger = get_logger()
   logger.info("Test started")
   coinbase = Coinbase("EURC/USDC", Tokens.EURC, Tokens.USDC)
+
+  await coinbase.wait_till_deposit_arrives(Tokens.USDC)
   account_manager = AccountManager(coinbase)
   wallet_service = WalletService()
   w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
