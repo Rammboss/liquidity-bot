@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 
 from common.logger import get_logger
 from execution.BasicTask import BasicTask
@@ -12,21 +13,23 @@ class Executor:
   async def run(self):
     while True:
       try:
-        if len(self.queue) > 0:
-          # 1. Sortieren nach Priorität (Höchste zuerst)
-          self.queue.sort(key=lambda t: t.priority, reverse=True)
-          task = self.queue[0]
+        if self.queue:
+          # Sort ascending: highest priority moves to the end of the list
+          self.queue.sort(key=lambda t: t.priority)
+
+          # Get the last item (highest priority)
+          task = self.queue[-1]
           self.logger.info(f"Starting task {task.__class__.__name__} with priority {task.priority}")
-          try:
-            await task.run()
-            if task in self.queue:
-              self.queue.pop()
-              self.logger.info(f"Task {task.__class__.__name__} successfully completed and popped.")
-          except Exception as e:
-            self.queue.pop()
-            self.logger.error(f"Task {task.__class__.__name__} failed: {e}. Keeping in queue for retry.")
+
+          await task.run()
+          self.queue.pop()
+          self.logger.info(f"Task {task.__class__.__name__} completed.")
         else:
           await asyncio.sleep(1)
       except Exception as e:
-        self.logger.error(f"Error executing task: {e}")
-        await asyncio.sleep(30)
+        error_stack = traceback.format_exc()
+        self.logger.error(f"Stack trace:\n{error_stack}")
+        self.logger.error(f"Queue Error: {e}")
+        self.queue.pop()
+        self.logger.warning(f"Remove job from queue.")
+        await asyncio.sleep(1)
