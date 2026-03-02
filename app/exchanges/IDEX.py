@@ -51,19 +51,11 @@ class IDEX(ABC):
                ):
     self.logger = get_logger()
     self.name = name
-    node_url = os.getenv(f"NODE_URL_{chain.upper()}")
+    node_url = os.getenv(f"RPC_URL")
     if not node_url:
       raise ValueError(f"No NODE_URL set for chain '{chain}'")
 
-    node_url_ws = os.getenv(f"NODE_URL_{chain.upper()}_WS")
-    if not node_url_ws:
-      raise ValueError(f"No NODE_URL_WS set for chain '{chain}'")
-
     self.w3 = Web3(Web3.HTTPProvider(node_url))
-    self.w3_ws = AsyncWeb3(WebSocketProvider(
-      node_url_ws,
-      websocket_kwargs={"ping_interval": 20, "ping_timeout": 10},
-    ))
 
     self.chain_id = self.w3.eth.chain_id
     self.wallet: LocalAccount = self.w3.eth.account.from_key(os.getenv("PRIVATE_KEY"))
