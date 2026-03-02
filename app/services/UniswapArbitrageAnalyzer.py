@@ -44,7 +44,18 @@ class RebalanceResult:
 
 
 class UniswapArbitrageAnalyzer:
-  def __init__(self, coinbase_product_id, uni_pool_address, token0: Tokens, token1: Tokens, executor: Executor = None):
+  def __init__(
+      self,
+      starting_date: datetime,
+      starting_balance_eth: float,
+      starting_balance_eurc: float,
+      starting_balance_usdc: float,
+      target_qty: float,
+      coinbase_product_id, uni_pool_address,
+      token0: Tokens,
+      token1: Tokens,
+      executor: Executor
+  ):
     self.logger = get_logger()
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
     self.token0 = Token(token0)
@@ -55,8 +66,12 @@ class UniswapArbitrageAnalyzer:
     self.uniswap_pool = UniswapV3(chain="ethereum", fee_tier=500)
     self.executor = executor
     self.wallet_service = WalletService()
-    self.target_qty = 3000
+    self.target_qty = target_qty
     self.telegram = TelegramServices(os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID"))
+    self.starting_date = starting_date
+    self.starting_balance_eth = starting_balance_eth
+    self.starting_balance_eurc = starting_balance_eurc
+    self.starting_balance_usdc = starting_balance_usdc
 
   @staticmethod
   def calculate_rebalance(usdc_amount, eurc_amount, eurc_price_in_usdc) -> RebalanceResult:
@@ -132,6 +147,45 @@ class UniswapArbitrageAnalyzer:
 
     order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
     result = self.calculate_rebalance(total.get(Tokens.USDC), total.get(Tokens.EURC), float(order_book.pricebook.asks[0].price))
+    eth_price = self.coinbase.get_eth_price()
+
+    # Calc overall profit from constructor values
+    current_date = datetime.now(timezone.utc)
+
+    if self.starting_date.tzinfo is None:
+      starting_date_aware = self.starting_date.replace(tzinfo=timezone.utc)
+    else:
+      starting_date_aware = self.starting_date
+
+    runtime_delta = current_date - starting_date_aware
+
+    profit_eth = total.get(Tokens.ETH) - self.starting_balance_eth
+    profit_eurc = total.get(Tokens.EURC) - self.starting_balance_eurc
+    profit_usdc = total.get(Tokens.USDC) - self.starting_balance_usdc
+
+    total_profit_usdc = profit_eth * eth_price + profit_eurc * float(order_book.pricebook.asks[0].price) + profit_usdc
+
+    self.logger.info(f"Total profit: {total_profit_usdc}$")
+    self.logger.info(f"balances @start: {self.starting_balance_eurc}€ | {self.starting_balance_usdc}$")
+    self.logger.info(f"balances now: {total.get(Tokens.EURC)}€ | {total.get(Tokens.USDC)}$")
+    self.logger.info(f"Runtime: {runtime_delta}")
+
+    seconds_in_year = 365 * 24 * 60 * 60
+    runtime_seconds = runtime_delta.total_seconds()
+
+    starting_total_usdc = (
+        self.starting_balance_eth * eth_price +
+        self.starting_balance_eurc * float(order_book.pricebook.asks[0].price) +
+        self.starting_balance_usdc
+    )
+
+    if runtime_seconds > 0 and starting_total_usdc > 0:
+      apr = (total_profit_usdc / starting_total_usdc) * (seconds_in_year / runtime_seconds) * 100
+      self.logger.info(f"Current APR: {apr:.2f}%")
+    else:
+      self.logger.warning("Runtime too short to calculate APR.")
+
+
     self.logger.info(f"Rebalance Analysis: {result}")
 
     while True:
