@@ -5,8 +5,9 @@ from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
 from blockchain.Token import Token, Tokens
-from exchanges.Coinbase.Coinbase import Coinbase
+from blockchain.WalletService import WalletService
 from common.logger import get_logger
+from exchanges.Coinbase.Coinbase import Coinbase
 
 dotenv.load_dotenv()
 
@@ -18,10 +19,11 @@ class AccountManager:
     self.wallet: LocalAccount = Account.from_key(os.getenv("PRIVATE_KEY"))
     self.eurc = Token(Tokens.EURC)
     self.usdc = Token(Tokens.USDC)
+    self.wallet_service = WalletService()
 
   def get_coinbase_balances(self):
-    usdc = self.coinbase.get_account_balances(Tokens.USDC, "total")
-    eurc = self.coinbase.get_account_balances(Tokens.EURC, "total")
+    usdc = self.coinbase.get_account_balances(Tokens.USDC, "free")
+    eurc = self.coinbase.get_account_balances(Tokens.EURC, "free")
     return {
       Tokens.USDC: usdc,
       Tokens.EURC: eurc
@@ -30,9 +32,12 @@ class AccountManager:
   def get_wallet_balances(self):
     usdc = self.usdc.to_human(self.usdc.contract.functions.balanceOf(self.wallet.address).call())
     eurc = self.eurc.to_human(self.eurc.contract.functions.balanceOf(self.wallet.address).call())
+    eth = float(self.wallet_service.w3.from_wei(self.wallet_service.w3.eth.get_balance(self.wallet.address), "ether"))
+
     return {
       Tokens.USDC: usdc,
-      Tokens.EURC: eurc
+      Tokens.EURC: eurc,
+      Tokens.ETH: eth
     }
 
   def get_total_balances(self):
@@ -40,5 +45,6 @@ class AccountManager:
     wallet_balances = self.get_wallet_balances()
     return {
       Tokens.USDC: coinbase_balances[Tokens.USDC] + wallet_balances[Tokens.USDC],
-      Tokens.EURC: coinbase_balances[Tokens.EURC] + wallet_balances[Tokens.EURC]
+      Tokens.EURC: coinbase_balances[Tokens.EURC] + wallet_balances[Tokens.EURC],
+      Tokens.ETH: wallet_balances.get(Tokens.ETH)
     }
