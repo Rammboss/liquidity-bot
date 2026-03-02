@@ -1,3 +1,5 @@
+import asyncio
+
 from hexbytes import HexBytes
 from telegram.constants import ParseMode
 
@@ -44,6 +46,7 @@ class ArbitrageExecuteTask(BasicTask):
 
   async def run(self):
     total_before = self.account_manager.get_total_balances()
+    eth_before = total_before.get(Tokens.ETH)
 
     if self.sell_coinbase_buy_uni:
       # 2. Kauf auf Uniswap
@@ -87,10 +90,19 @@ class ArbitrageExecuteTask(BasicTask):
     self.wallet_service.wait_tx_is_mined(HexBytes(tx_hash))
 
     total_after = self.account_manager.get_total_balances()
+    eth_after = total_after.get(Tokens.ETH)
     profit_usdc = total_after.get(Tokens.USDC) - total_before.get(Tokens.USDC)
     profit_eurc = total_after.get(Tokens.EURC) - total_before.get(Tokens.EURC)
-    total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price
-    profit_string = f"Total profit: {total_profit_in_usdc:.2f} USDC (USDC: {profit_usdc:.2f}, EURC: {profit_eurc:.2f})"
+
+    eth_fees = eth_after - eth_before
+    eth_fees_cost_usd = eth_fees * self.eth_price
+
+    total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price + eth_fees_cost_usd  # + fees because negative
+    profit_string = (f"Total profit: {total_profit_in_usdc:.2f} USDC (USDC: {profit_usdc:.2f}, EURC: {profit_eurc:.2f}), Fees: {eth_fees:.6f} ETH ($"
+                     f"{eth_fees_cost_usd:.2f}))")
     self.logger.info(profit_string)
     await self.telegram.native_send(profit_string, parse_mode=ParseMode.HTML)
+
+    await asyncio.sleep(20)
+
     self.logger.info("Arbitrage execution completed")
