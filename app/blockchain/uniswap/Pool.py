@@ -97,7 +97,23 @@ class Pool:
   async def get_swap_costs(self, token_in: Tokens, amount_in: float, min_amount_out: float, eth_price: float, static=False) -> float:
 
     if static:
-      gas_in_wei = 280493 * self.w3.eth.gas_price
+      # 1. Get current Base Fee
+      latest_block = self.w3.eth.get_block('latest')
+      base_fee = latest_block['baseFeePerGas']
+
+      # 2. Your manual Priority Fee (0.01 Gwei)
+      prio_fee = self.w3.to_wei(0.01, 'gwei')
+
+      # 3. Calculate your specific Max Fee per Gas
+      # We add a 12.5% buffer to the base fee to ensure the tx remains
+      # valid even if the base fee rises in the next block.
+      max_fee_per_gas = int(base_fee * 1.125) + prio_fee
+
+      # 4. Calculate total cost using your precise gas_used
+      gas_used = 280493
+      gas_in_wei = gas_used * max_fee_per_gas
+
+      # 5. Convert and return USD
       gas_costs_eth = self.w3.from_wei(gas_in_wei, "ether")
       return float(gas_costs_eth) * eth_price
     else:
@@ -142,6 +158,17 @@ class Pool:
     else:
       min_amount_out = output_token.to_raw(min_amount_out)
 
+    # 1. Fetch current network conditions
+    latest_block = self.w3.eth.get_block('latest')
+    base_fee = latest_block['baseFeePerGas']
+
+    # 2. Define your tiny priority fee (0.01 Gwei)
+    prio_fee = self.w3.to_wei(0.01, 'gwei')
+
+    # Standard practice is (Base Fee * 2) + Prio Fee to handle block volatility
+    # If you want to be strictly cheap, use (Base Fee + Prio Fee), but it might fail if base fee rises 1%
+    max_fee = int(base_fee * 1.2) + prio_fee
+
     tx = (
       codec.encode
       .chain()
@@ -162,6 +189,12 @@ class Pool:
         ur_address=self.universal_router.address
       )
     )
-    gas_costs = self.w3.from_wei(tx['gas'] * tx['maxFeePerGas'], "ether")
+    tx['maxFeePerGas'] = max_fee
+    tx['maxPriorityFeePerGas'] = prio_fee
 
-    return float(gas_costs), tx
+    current_base_fee = self.w3.eth.get_block('latest')['baseFeePerGas']
+
+    # This is what you will likely actually pay
+    estimated_actual_cost = self.w3.from_wei(tx['gas'] * (current_base_fee + prio_fee), "ether")
+
+    return float(estimated_actual_cost), tx
