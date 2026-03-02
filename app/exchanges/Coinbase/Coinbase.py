@@ -20,7 +20,7 @@ from app.exchanges.Coinbase.Responses.TransactionList import Transaction, Transa
 from app.exchanges.Exchange import Exchange
 from app.exchanges.ICEX import ICEX
 from blockchain.Network import Network
-from blockchain.Token import Tokens
+from blockchain.Token import Token, Tokens
 from common.logger import get_logger
 
 dotenv.load_dotenv()
@@ -337,4 +337,27 @@ class Coinbase(ICEX):
         return True
       await asyncio.sleep(5)
     self.logger.warning(f"Timeout waiting for withdrawal {tx_id} to be confirmed")
+    return False
+
+  async def wait_till_deposit_arrives(self, send_token: Token, timeout: int = DEFAULT_TIMEOUT_ORDERS):
+    end_time = asyncio.get_event_loop().time() + timeout
+
+    balance_before = float(self.get_account_balances(send_token.token, "free"))
+    self.logger.info(f"Waiting for {send_token.token} deposit. Starting balance: {balance_before}")
+
+    while asyncio.get_event_loop().time() < end_time:
+      try:
+        balance_after = float(self.get_account_balances(send_token.token, "free"))
+
+        if balance_after > balance_before:
+          diff = balance_after - balance_before
+          self.logger.info(f"Deposit detected! Balance increased by {diff} {send_token.token}")
+          return True
+
+      except Exception as e:
+        self.logger.error(f"Error checking balance: {e}")
+
+      await asyncio.sleep(5)
+
+    self.logger.warning(f"Timeout reached after {timeout}s waiting for {send_token.token} deposit.")
     return False
