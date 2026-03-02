@@ -1,11 +1,11 @@
 import asyncio
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import dotenv
 from web3 import Web3
-from web3.utils.subscriptions import NewHeadsSubscriptionContext
 
 from blockchain.Network import Network
 from blockchain.Token import Token, Tokens
@@ -214,7 +214,7 @@ class UniswapArbitrageAnalyzer:
             order_book_side=order_book.pricebook.asks,
             is_cb_buy=True
           )
-        elif profit_b > 0:
+        elif profit_b > 0 >= profit_a:
           await self._process_opportunity(
             side="B",
             profit_raw=profit_b,
@@ -269,7 +269,7 @@ class UniswapArbitrageAnalyzer:
     cb_withdrawal_fee = await self.coinbase.get_withdrawal_fees()
     eth_price = self.coinbase.get_eth_price()
     pool_swap_fees = await self.pool.get_swap_costs(self.token0.token, buy_outcome, 0, eth_price, True)
-
+    self.logger.info(f"Swap fees:~{pool_swap_fees}$")
     if wallet_balances.get(Tokens.EURC) < 1:
       existing_token_on_wallet = Tokens.USDC
     else:
@@ -303,10 +303,14 @@ class UniswapArbitrageAnalyzer:
       return
 
     if cb_rebasing_needed or wallet_rebasing_needed:
-      if wallet_rebasing_needed:
+      does_any_wwt_exists_in_queue = next(
+        (task for task in self.executor.queue if isinstance(task, WalletWithdrawalTask)),
+        False
+      )
+      if wallet_rebasing_needed and not does_any_wwt_exists_in_queue:
         wallet_bal = self.account_manager.get_wallet_balances().get(t_needed_cb)
         dep_addr = self.coinbase.get_deposit_addresses(t_needed_cb, Network.ETH)
-        self.logger.info("Add Wallet rebalance task to queue...")
+        self.logger.info("Add [WalletWithdrawalTask] to queue...")
         self.executor.queue.append(
           WalletWithdrawalTask(
             wallet_service=self.wallet_service,
@@ -314,12 +318,16 @@ class UniswapArbitrageAnalyzer:
             destination=dep_addr,
             eth_price=eth_price,
             telegram=self.telegram,
+            coinbase=self.coinbase,
             amount=wallet_bal
           ))
-        await asyncio.sleep(10)
-      if cb_rebasing_needed:
+      does_any_cwt_exists_in_queue = next(
+        (task for task in self.executor.queue if isinstance(task, CoinbaseWithdrawalTask)),
+        False
+      )
+      if cb_rebasing_needed and not does_any_cwt_exists_in_queue:
         cb_bal = self.account_manager.get_coinbase_balances().get(t_needed_wallet)
-        self.logger.info("Add Coinbase rebalance task to queue...")
+        self.logger.info("Add [CoinbaseWithdrawalTask] to queue...")
         self.executor.queue.append(
           CoinbaseWithdrawalTask(
             coinbase=self.coinbase,
@@ -329,9 +337,9 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=cb_bal * 0.99  # to avoid bad request due invalid balance
           ))
-        await asyncio.sleep(20)
+        await asyncio.sleep(10)
     else:
-      self.logger.info("Add arbitrage execution task to queue...")
+      self.logger.info("Add [ArbitrageExecuteTask] to queue...")
       self.executor.queue.append(ArbitrageExecuteTask(
         coinbase=self.coinbase,
         pool=self.pool,
@@ -345,7 +353,7 @@ class UniswapArbitrageAnalyzer:
         eth_price=eth_price,
         telegram=self.telegram
       ))
-      await asyncio.sleep(5)
+      await asyncio.sleep(10)
 
   async def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
                             t_needed_wallet: Tokens, t_needed_cb: Tokens, usage: float
