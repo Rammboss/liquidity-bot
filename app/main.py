@@ -98,9 +98,9 @@ def _default_runtime_config() -> dict:
   return {
     "starting_date": datetime.datetime(2026, 2, 25, 22, 37, 34),
     "starting_balance_eth": 0.36,
-    "starting_balance_eurc": 2803.649488,
-    "starting_balance_usdc": 2997.099793,
-    "target_qty": 4000,
+    "starting_balance_eurc": 2803.649488 + 1002.44,
+    "starting_balance_usdc": 2997.099793 + 1168.368758,
+    "target_qty": 5000,
     "arbitrage_bot_enabled": True,
     "uniswap_position_manger_enabled": False,
     "indexer_enabled": False,
