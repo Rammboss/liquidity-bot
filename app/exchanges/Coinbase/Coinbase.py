@@ -112,7 +112,7 @@ class Coinbase(ICEX):
 
     return self._cached_fee
 
-  async def get_withdrawal_fees(self) -> float:
+  async def estimate_withdrawal_fees(self) -> float:
     """Return hardcoded withdrawal fees for a given token."""
     gas_price_gwei = self.w3.eth.gas_price / 1e9
     gas_limit = 65000
@@ -335,7 +335,7 @@ class Coinbase(ICEX):
       if tx.status == "completed":
         self.logger.info(f"Withdrawal {tx_id} confirmed on network {tx.network.network_name}")
         return True
-      await asyncio.sleep(5)
+      await asyncio.sleep(1)
     self.logger.warning(f"Timeout waiting for withdrawal {tx_id} to be confirmed")
     return False
 
@@ -357,7 +357,7 @@ class Coinbase(ICEX):
       except Exception as e:
         self.logger.error(f"Error checking balance: {e}")
 
-      await asyncio.sleep(5)
+      await asyncio.sleep(3)
 
     self.logger.warning(f"Timeout reached after {timeout}s waiting for {send_token.token} deposit.")
     return False
