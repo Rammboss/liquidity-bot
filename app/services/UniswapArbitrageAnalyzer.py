@@ -185,14 +185,13 @@ class UniswapArbitrageAnalyzer:
     else:
       self.logger.warning("Runtime too short to calculate APR.")
 
-
     self.logger.info(f"Rebalance Analysis: {result}")
 
     while True:
       try:
         if len(self.executor.queue) > 0:
           self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
-          await asyncio.sleep(10)
+          await asyncio.sleep(1)
           continue
 
         order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
@@ -227,7 +226,7 @@ class UniswapArbitrageAnalyzer:
         await asyncio.sleep(12)
       except Exception as e:
         self.logger.error(f"Error in main loop: {e}")
-        await asyncio.sleep(30)
+        await asyncio.sleep(1)
 
   async def _process_opportunity(self, side: str, profit_raw: float, target_qty: float,
                                  entry_price: float, order_book_side: list, is_cb_buy: bool
@@ -266,7 +265,7 @@ class UniswapArbitrageAnalyzer:
 
     # 2. Kostenkalkulation (Zentralisiert)
     CB_FEE_RATE = 0.00001  # 0.001% Taker Fee
-    cb_withdrawal_fee = await self.coinbase.get_withdrawal_fees()
+    cb_withdrawal_fee = await self.coinbase.estimate_withdrawal_fees()
     eth_price = self.coinbase.get_eth_price()
     pool_swap_fees = await self.pool.get_swap_costs(self.token0.token, buy_outcome, 0, eth_price, True)
     self.logger.info(f"Swap fees:~{pool_swap_fees}$")
@@ -299,10 +298,7 @@ class UniswapArbitrageAnalyzer:
 
     self.logger.info(f"Profit (incl. costs): {real_profit:.2f}$")
 
-    if real_profit <= 0:
-      return
-
-    if cb_rebasing_needed or wallet_rebasing_needed:
+    if real_profit >= -0.30 and (cb_rebasing_needed or wallet_rebasing_needed):
       does_any_wwt_exists_in_queue = next(
         (task for task in self.executor.queue if isinstance(task, WalletWithdrawalTask)),
         False
@@ -337,7 +333,8 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=cb_bal * 0.99  # to avoid bad request due invalid balance
           ))
-        await asyncio.sleep(10)
+    elif real_profit <= 0:
+      return
     else:
       self.logger.info("Add [ArbitrageExecuteTask] to queue...")
       self.executor.queue.append(ArbitrageExecuteTask(
@@ -353,7 +350,6 @@ class UniswapArbitrageAnalyzer:
         eth_price=eth_price,
         telegram=self.telegram
       ))
-      await asyncio.sleep(10)
 
   async def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
                             t_needed_wallet: Tokens, t_needed_cb: Tokens, usage: float
