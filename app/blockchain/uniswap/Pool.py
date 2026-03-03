@@ -70,6 +70,134 @@ class Pool:
     bid_amount = self.quoter.functions.quoteExactInputSingle(quote_params).call()
     return token_out.to_human(bid_amount[0])
 
+  def get_volume_until_price(self, token_in: Token, min_price: float) -> float:
+    """
+    Estimate the maximum `token_in` volume tradable until the pool's marginal
+    price reaches `min_price` (token_out per token_in), using pool state,
+    liquidity and initialized ticks only (no quoter-orderbook stepping).
+    """
+    if min_price <= 0:
+      raise ValueError("min_price must be greater than 0")
+
+    zero_for_one = token_in.address == self.token0.address
+    token_out = self.token1 if zero_for_one else self.token0
+
+    slot0 = self.pool_contract.functions.slot0().call()
+    sqrt_price_x96 = int(slot0[0])
+    current_tick = int(slot0[1])
+    liquidity = int(self.pool_contract.functions.liquidity().call())
+
+    current_price = self._price_token_out_per_token_in(sqrt_price_x96, token_in, token_out)
+    if current_price <= min_price:
+      return 0.0
+
+    target_sqrt_x96 = self._target_sqrt_price_x96(min_price, zero_for_one)
+    q96 = float(2 ** 96)
+    sqrt_current = sqrt_price_x96 / q96
+    sqrt_target = target_sqrt_x96 / q96
+
+    fee_tier = self.fee / 1_000_000
+    fee_factor = 1.0 - fee_tier
+    if fee_factor <= 0:
+      raise ValueError("Invalid pool fee configuration")
+
+    amount_in_raw_effective = 0.0
+    tick_spacing = int(self.pool_contract.functions.tickSpacing().call())
+
+    for _ in range(2000):
+      if liquidity <= 0:
+        break
+
+      if zero_for_one and sqrt_current <= sqrt_target:
+        break
+      if (not zero_for_one) and sqrt_current >= sqrt_target:
+        break
+
+      next_tick = self._next_initialized_tick(current_tick, tick_spacing, zero_for_one)
+      next_tick_sqrt = self._sqrt_ratio_at_tick_x96(next_tick) / q96
+
+      if zero_for_one:
+        sqrt_next = max(sqrt_target, next_tick_sqrt)
+        amount_step = liquidity * (sqrt_current - sqrt_next) / (sqrt_current * sqrt_next)
+      else:
+        sqrt_next = min(sqrt_target, next_tick_sqrt)
+        amount_step = liquidity * (sqrt_next - sqrt_current)
+
+      if amount_step < 0:
+        amount_step = 0
+
+      amount_in_raw_effective += amount_step
+      reached_tick_boundary = abs(sqrt_next - next_tick_sqrt) < 1e-18
+      sqrt_current = sqrt_next
+
+      if not reached_tick_boundary:
+        break
+
+      tick_info = self.pool_contract.functions.ticks(next_tick).call()
+      liquidity_net = int(tick_info[1])
+
+      if zero_for_one:
+        liquidity -= liquidity_net
+        current_tick = next_tick - 1
+      else:
+        liquidity += liquidity_net
+        current_tick = next_tick
+
+    amount_in_raw_gross = amount_in_raw_effective / fee_factor
+    return token_in.to_human(int(amount_in_raw_gross))
+
+  def _price_token_out_per_token_in(self, sqrt_price_x96: int, token_in: Token, token_out: Token) -> float:
+    q96 = float(2 ** 96)
+    sqrt_price = sqrt_price_x96 / q96
+    price_token1_per_token0 = (sqrt_price ** 2) * (10 ** (self.token0.decimals - self.token1.decimals))
+
+    if token_in.address == self.token0.address and token_out.address == self.token1.address:
+      return price_token1_per_token0
+
+    return 1 / price_token1_per_token0
+
+  def _target_sqrt_price_x96(self, min_price: float, zero_for_one: bool) -> int:
+    if zero_for_one:
+      price_token1_per_token0 = min_price
+    else:
+      price_token1_per_token0 = 1 / min_price
+
+    ratio_raw = price_token1_per_token0 * (10 ** (self.token1.decimals - self.token0.decimals))
+    return int((ratio_raw ** 0.5) * (2 ** 96))
+
+  def _sqrt_ratio_at_tick_x96(self, tick: int) -> int:
+    return int((1.0001 ** (tick / 2)) * (2 ** 96))
+
+  def _next_initialized_tick(self, current_tick: int, tick_spacing: int, zero_for_one: bool) -> int:
+    compressed = current_tick // tick_spacing
+    if zero_for_one:
+      word_pos = (compressed - 1) >> 8
+      bit_pos = (compressed - 1) & 0xFF
+      for _ in range(4000):
+        bitmap = int(self.pool_contract.functions.tickBitmap(word_pos).call())
+        mask = (1 << (bit_pos + 1)) - 1
+        masked = bitmap & mask
+        if masked:
+          next_bit = masked.bit_length() - 1
+          return ((word_pos << 8) + next_bit) * tick_spacing
+        word_pos -= 1
+        bit_pos = 255
+      return -887272
+
+    word_pos = (compressed + 1) >> 8
+    bit_pos = (compressed + 1) & 0xFF
+    for _ in range(4000):
+      bitmap = int(self.pool_contract.functions.tickBitmap(word_pos).call())
+      mask = ~((1 << bit_pos) - 1) & ((1 << 256) - 1)
+      masked = bitmap & mask
+      if masked:
+        lsb = masked & -masked
+        next_bit = lsb.bit_length() - 1
+        return ((word_pos << 8) + next_bit) * tick_spacing
+      word_pos += 1
+      bit_pos = 0
+    return 887272
+
   def get_token(self, token: Tokens) -> Token:
     if token.to_address(self.chain_id) == self.token0.address:
       return self.token0
