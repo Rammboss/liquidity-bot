@@ -99,7 +99,7 @@ async def main():
   test1 = await  coinbase.wait_order_filled(order['id'], 120)
   test2 = await pool.swap(Tokens.EURC, 2417.118612910428 , 2800)
 
-  test = await coinbase.get_withdrawal_fees(Tokens.ETH)
+  test = await coinbase.estimate_withdrawal_fees(Tokens.ETH)
   logger.info(test)
 
   # task = CoinbaseWithdrawalTask(
