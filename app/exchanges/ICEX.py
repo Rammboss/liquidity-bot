@@ -33,6 +33,8 @@ class ICEX(ABC):
   @abstractmethod
   def create_order(
       self,
+      token0: Tokens,
+      token1: Tokens,
       side: str,
       type: str,
       amount: float,

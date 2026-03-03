@@ -55,7 +55,8 @@ class Coinbase(ICEX):
     self.logger.info("Coinbase client initialized")
 
   def _advanced_trade_request(self, method: str, path: str, params: Optional[dict] = None,
-                              payload: Optional[dict] = None) -> dict:
+                              payload: Optional[dict] = None
+                              ) -> dict:
     jwt_token = self._generate_jwt(method, path)
     url = f"{self.url_coinbase_advanced_trade_api}{path}"
     response = requests.request(
@@ -69,7 +70,7 @@ class Coinbase(ICEX):
     response.raise_for_status()
     return response.json() if response.content else {}
 
-  def create_order(self, side: str, type_: str, amount: float, price: Optional[float] = None):
+  def create_order(self, token0: Tokens, token1: Tokens, side: str, type_: str, amount: float, price: Optional[float] = None):
     side = side.lower()
     type_ = type_.lower()
     if side not in ('buy', 'sell') or type_ not in ('limit', 'market'):
@@ -96,7 +97,7 @@ class Coinbase(ICEX):
 
     payload = {
       "client_order_id": str(uuid.uuid4()),
-      "product_id": self.symbol,
+      "product_id": self.get_product_id(token0, token1).product_id,
       "side": side.upper(),
       "order_configuration": order_configuration,
     }

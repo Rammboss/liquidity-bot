@@ -12,7 +12,6 @@ from blockchain.WalletService import WalletService
 from blockchain.uniswap.Pool import Pool
 from common.AccountManager import AccountManager
 from common.logger import get_logger
-from execution.tasks.CoinbaseWithdrawalTask import CoinbaseWithdrawalTask
 from main import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDRESS
 from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
 
@@ -57,8 +56,15 @@ async def main():
   logger = get_logger()
   logger.info("Test started")
   coinbase = Coinbase("EURC/USDC", Tokens.EURC, Tokens.USDC)
+  usdc = Token(Tokens.USDC)
+  # coinbase.get_eth_price() --->Passed
+  # test2_before1 = coinbase.get_orders()
+  # test2 = await  coinbase.wait_order_filled(test2_before1['orders'][0]['order_id']) --->Passed
+  # test1 = await coinbase.wait_till_deposit_arrives(usdc) --->Passed
+  # test3 = coinbase.get_trade_fee() --->Passed
+  # test4 = coinbase.get_account_balances(Tokens.EURC, "total")   --->Passed
+  # test5 = coinbase.create_order(Tokens.USDC, Tokens.EURC, "sell", "limit", 1, 1.1618 )
 
-  await coinbase.wait_till_deposit_arrives(Tokens.USDC)
   account_manager = AccountManager(coinbase)
   wallet_service = WalletService()
   w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
@@ -91,13 +97,10 @@ async def main():
 
   pool = Pool(EURO_USDC_UNI_V3_POOL_ADDRESS)
 
-
-
-
   # pool_swap_fees = await pool.get_swap_costs(pool.token1.token, 1, 0)
   order = coinbase.create_order("buy", "limit", 1, 0.99)
   test1 = await  coinbase.wait_order_filled(order['id'], 120)
-  test2 = await pool.swap(Tokens.EURC, 2417.118612910428 , 2800)
+  test2 = await pool.swap(Tokens.EURC, 2417.118612910428, 2800)
 
   test = await coinbase.estimate_withdrawal_fees(Tokens.ETH)
   logger.info(test)
@@ -118,7 +121,7 @@ async def main():
   account_manager = AccountManager(coinbase)
   w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
 
-  wallet_transfer_amount = 10 #account_manager.get_wallet_balances().get(Tokens.EURC)
+  wallet_transfer_amount = 10  # account_manager.get_wallet_balances().get(Tokens.EURC)
   euroc = Token(Tokens.EURC)
   deposit_address = coinbase.get_deposit_addresses(Tokens.EURC, Network.ETH)
   tx = euroc.contract.functions.transfer(
