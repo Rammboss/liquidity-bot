@@ -96,8 +96,9 @@ class WalletWithdrawalTask(BasicTask):
 
     if arrived_on_cb and is_mined:
       await self.telegram.native_send(
-        f"Withdrawal of {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.symbol} to {self.destination} completed! Tx Hash: {tx_hash.hex()}",
-        ParseMode.HTML)
+        f"✅ Wallet→CB transfer done | {self.send_token.to_human(raw_withdraw_amount):.2f} {self.send_token.symbol} | Tx: {tx_hash.hex()[:10]}...",
+        ParseMode.HTML
+      )
 
       self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")
     else:

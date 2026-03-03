@@ -27,14 +27,11 @@ class TelegramServices:
       tx2,
       profit
   ):
-    pretty_text = f"""
-I. Swap {tx1_0_amount} {tx1_0_symbol} ➡️ {tx1_1_amount} {tx1_1_symbol}
-
-II. Swap {tx2_0_amount} {tx2_0_symbol} ➡️ {tx2_1_amount} {tx2_1_symbol}
-
-Profit: {profit}💲
-                                   
-"""
+    pretty_text = (
+      f"🔁 {tx1_0_amount:.2f} {tx1_0_symbol} → {tx1_1_amount:.2f} {tx1_1_symbol}\n"
+      f"🔁 {tx2_0_amount:.2f} {tx2_0_symbol} → {tx2_1_amount:.2f} {tx2_1_symbol}\n"
+      f"💰 Profit: {profit:.2f}"
+    )
     await self.bot.send_message(chat_id=self.chat_id, text=pretty_text, parse_mode=ParseMode.HTML)
 
   async def mark_updates_as_seen(self):

@@ -102,8 +102,10 @@ class ArbitrageExecuteTask(BasicTask):
     eth_fees_cost_usd = eth_fees * self.eth_price
 
     total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price + eth_fees_cost_usd  # + fees because negative
-    profit_string = (f"Total profit: {total_profit_in_usdc:.2f} USDC (USDC: {profit_usdc:.2f}, EURC: {profit_eurc:.2f}), Fees: {eth_fees:.6f} ETH ($"
-                     f"{eth_fees_cost_usd:.2f}))")
+    profit_string = (
+      f"✅ Arb done | PnL: {total_profit_in_usdc:.2f} USDC\n"
+      f"USDC: {profit_usdc:.2f} | EURC: {profit_eurc:.2f} | Fee: ${eth_fees_cost_usd:.2f}"
+    )
     self.logger.info(profit_string)
     await self.telegram.native_send(profit_string, parse_mode=ParseMode.HTML)
 

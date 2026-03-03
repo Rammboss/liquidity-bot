@@ -57,6 +57,9 @@ class CoinbaseWithdrawalTask(BasicTask):
     mined = self.wallet_service.wait_till_coins_arrive(self.token)
     if mined:
       self.logger.info(f"Order filled: {response['data']['id']}")
-      await self.telegram.native_send(f"Order filled: {response['data']['id']}", ParseMode.HTML)
+      await self.telegram.native_send(
+        f"✅ Coinbase withdrawal complete | {self.token.symbol}: {withdraw_amount:.2f} | ID: {response['data']['id']}",
+        ParseMode.HTML
+      )
     else:
       self.logger.warning(f"Order not filled within timeout: {response['data']['id']}")

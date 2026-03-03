@@ -14,6 +14,7 @@ class ControlService:
   async def run(self):
     self.logger.info("Starting ControlService... Listening for #sleep and #start")
     await self.telegram.mark_updates_as_seen()
+    await self.telegram.native_send("🤖 Bot online. Commands: #sleep (pause), #start (resume).")
 
     while True:
       try:
@@ -27,11 +28,11 @@ class ControlService:
         if "#sleep" in normalized and not self.runtime_state.is_sleep_mode():
           self.runtime_state.set_sleep_mode(True)
           self.logger.warning("Sleep mode enabled by telegram command.")
-          await self.telegram.native_send("😴 Sleep mode enabled (#sleep).")
+          await self.telegram.native_send("😴 Sleep mode: ON. Use #start to resume.")
         elif "#start" in normalized and self.runtime_state.is_sleep_mode():
           self.runtime_state.set_sleep_mode(False)
           self.logger.info("Sleep mode disabled by telegram command.")
-          await self.telegram.native_send("🚀 Sleep mode disabled (#start).")
+          await self.telegram.native_send("🚀 Sleep mode: OFF. Trading resumed.")
 
         await asyncio.sleep(1)
       except Exception as e:
