@@ -59,8 +59,8 @@ class ArbitrageExecuteTask(BasicTask):
       )
       self.logger.info(f"Executing sell on Coinbase for {self.t1_start_amount} with expected outcome {self.t2_expected_outcome}")
       order = self.coinbase.create_order(
-        token0=self.pool.token0,
-        token1=self.pool.token1,
+        token0=self.pool.token0.token,
+        token1=self.pool.token1.token,
         side="sell",
         type_="limit",
         amount=self.t1_expected_outcome,
@@ -79,8 +79,8 @@ class ArbitrageExecuteTask(BasicTask):
       # 1. Kauf auf Coinbase
       self.logger.info(f"Executing buy on Coinbase for {self.t1_start_amount}")
       order = self.coinbase.create_order(
-        token0=self.pool.token0,
-        token1=self.pool.token1,
+        token0=self.pool.token0.token,
+        token1=self.pool.token1.token,
         side="buy",
         type_="limit",
         amount=self.t1_start_amount,

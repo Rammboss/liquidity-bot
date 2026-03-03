@@ -63,7 +63,7 @@ async def main():
   # test1 = await coinbase.wait_till_deposit_arrives(usdc) --->Passed
   # test3 = coinbase.get_trade_fee() --->Passed
   # test4 = coinbase.get_account_balances(Tokens.EURC, "total")   --->Passed
-  # test5 = coinbase.create_order(Tokens.USDC, Tokens.EURC, "sell", "limit", 1, 1.1618 )
+  # test5 = coinbase.create_order(Tokens.USDC, Tokens.EURC, "buy", "limit", 1.123456784356456, 1.160777777 )
 
   account_manager = AccountManager(coinbase)
   wallet_service = WalletService()
@@ -137,7 +137,7 @@ async def main():
 
   test = w3.eth.syncing
   target_qty = 5000  # Die Menge, die du bewegen willst (z.B. 5k EURC)
-  product = coinbase.get_product_id(Tokens.EURC, Tokens.USDC)
+  product = coinbase.get_product(Tokens.EURC, Tokens.USDC)
 
   eurc_usdc_pool = UniswapV3(chain="ethereum", fee_tier=500)
 

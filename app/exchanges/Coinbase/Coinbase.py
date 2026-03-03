@@ -17,7 +17,6 @@ from app.Configurations import DEFAULT_TIMEOUT_ORDERS
 from app.exchanges.Coinbase.DepositAdresses import DepositAddresses
 from app.exchanges.Coinbase.Responses.TransactionList import Transaction, TransactionList
 from app.exchanges.Exchange import Exchange
-from app.exchanges.ICEX import ICEX
 from blockchain.Network import Network
 from blockchain.Token import Token, Tokens
 from common.logger import get_logger
@@ -25,9 +24,9 @@ from common.logger import get_logger
 dotenv.load_dotenv()
 
 
-class Coinbase(ICEX):
+class Coinbase:
   def __init__(self, symbol: str, token0: Tokens, token1: Tokens):
-    super().__init__(Exchange.COINBASE)
+    self.name = Exchange.COINBASE
     self.logger = get_logger()
     self.symbol = symbol
 
@@ -42,7 +41,7 @@ class Coinbase(ICEX):
 
     self._last_fee_update: datetime = datetime.now() - timedelta(hours=1)
     self._cached_fee: Optional[dict] = None
-    self.product = self.get_product_id(token0, token1)
+    self.product = self.get_product(token0, token1)
 
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
 
@@ -50,9 +49,6 @@ class Coinbase(ICEX):
     """Generate JWT for Coinbase API authentication."""
     jwt_uri = jwt_generator.format_jwt_uri(request_method, request_path)
     return jwt_generator.build_rest_jwt(jwt_uri, self.api_key, self.api_secret.replace("\\n", "\n"))
-
-  async def init(self):
-    self.logger.info("Coinbase client initialized")
 
   def _advanced_trade_request(self, method: str, path: str, params: Optional[dict] = None,
                               payload: Optional[dict] = None
@@ -70,6 +66,14 @@ class Coinbase(ICEX):
     response.raise_for_status()
     return response.json() if response.content else {}
 
+  @staticmethod
+  def get_precision(increment_str: str) -> int:
+    """Extrahiert die Anzahl der Dezimalstellen aus einem Increment-String."""
+    if "." not in increment_str:
+      return 0
+    # Zählt Stellen nach dem Punkt, entfernt unnötige Nullen am Ende
+    return len(increment_str.split(".")[1].rstrip('0'))
+
   def create_order(self, token0: Tokens, token1: Tokens, side: str, type_: str, amount: float, price: Optional[float] = None):
     side = side.lower()
     type_ = type_.lower()
@@ -78,6 +82,10 @@ class Coinbase(ICEX):
 
     if type_ == "limit" and price is None:
       raise ValueError("price is required for limit orders")
+
+    # Dynamische Ermittlung der Präzision
+    base_prec = self.get_precision(self.product.base_increment)
+    quote_prec = self.get_precision(self.product.quote_increment)
 
     order_configuration: dict
     if type_ == "market":
@@ -89,15 +97,15 @@ class Coinbase(ICEX):
       base_size = amount / price if side == "buy" else amount
       order_configuration = {
         "limit_limit_gtc": {
-          "base_size": str(base_size),
-          "limit_price": str(price),
+          "base_size": f"{float(base_size):.{base_prec}f}",
+          "limit_price": f"{float(price):.{quote_prec}f}",
           "post_only": False,
         }
       }
 
     payload = {
       "client_order_id": str(uuid.uuid4()),
-      "product_id": self.get_product_id(token0, token1).product_id,
+      "product_id": self.product.product_id,
       "side": side.upper(),
       "order_configuration": order_configuration,
     }
@@ -229,7 +237,7 @@ class Coinbase(ICEX):
         continue
     return deposit_addresses.get_address(network)
 
-  def get_product_id(self, token0: Tokens, token1: Tokens) -> Product:
+  def get_product(self, token0: Tokens, token1: Tokens) -> Product:
     client = RESTClient(api_key=self.api_key, api_secret=self.api_secret)
 
     products_response: ListProductsResponse = client.get_products()
