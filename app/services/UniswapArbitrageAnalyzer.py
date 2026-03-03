@@ -39,7 +39,7 @@ class RebalanceResult:
 
   @property
   def is_significant(self) -> bool:
-    # Beispiel: Nur Swaps über 100.00 USDC sind relevant
+    # Beispiel: Nur Swaps über 100 USDC sind relevant
     return self.swap_amount > 100.0
 
 
@@ -118,7 +118,7 @@ class UniswapArbitrageAnalyzer:
       price = float(entry.price)
       size = float(entry.size)
 
-      # 1. Profitabilitäts-Check gegen das Limit
+      # 1. Profitability-Check gegen das Limit
       if is_ask and price >= limit_price:
         break
       if not is_ask and price <= limit_price:

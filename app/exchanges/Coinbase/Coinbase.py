@@ -39,10 +39,7 @@ class Coinbase:
     if not self.api_key or not self.api_secret:
       raise EnvironmentError("Missing Coinbase API credentials")
 
-    self._last_fee_update: datetime = datetime.now() - timedelta(hours=1)
-    self._cached_fee: Optional[dict] = None
     self.product = self.get_product(token0, token1)
-
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
 
   def _generate_jwt(self, request_method: str, request_path: str) -> str:
