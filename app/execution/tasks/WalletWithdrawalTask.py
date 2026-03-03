@@ -55,23 +55,24 @@ class WalletWithdrawalTask(BasicTask):
 
     self.logger.info(f"Withdrawing {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.name} to {self.destination}")
 
+    latest_block = self.w3.eth.get_block('latest')
+    # 2. Your manual Priority Fee (0.01 Gwei)
+    base_fee = latest_block['baseFeePerGas']
+    prio_fee = self.w3.to_wei(0.005, 'gwei')
+
+    max_fee_per_gas = int(base_fee * 1.125) + prio_fee
+
     tx = self.send_token.contract.functions.transfer(
       self.destination,
       raw_withdraw_amount
     ).build_transaction({
       "from": self.wallet_service.wallet.address,
       "nonce": self.w3.eth.get_transaction_count(self.wallet_service.wallet.address),
+      "maxFeePerGas": max_fee_per_gas,
+      'maxPriorityFeePerGas': prio_fee
     })
+
     gas = self.w3.eth.estimate_gas(tx)
-
-    latest_block = self.w3.eth.get_block('latest')
-    base_fee = latest_block['baseFeePerGas']
-    # 2. Your manual Priority Fee (0.01 Gwei)
-    prio_fee = self.w3.to_wei(0.01, 'gwei')
-
-    max_fee_per_gas = int(base_fee * 1.125) + prio_fee
-    tx["maxFeePerGas"] = max_fee_per_gas
-    tx['maxPriorityFeePerGas'] = prio_fee
 
     current_base_fee = self.w3.eth.get_block('latest')['baseFeePerGas']
 
