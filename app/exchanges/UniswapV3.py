@@ -32,48 +32,6 @@ class UniswapV3(IDEX):
     # Start single ticker thread
     self.refresh_ticker_by_block = refresh_ticker_by_block
 
-  async def _update_ticker(self, block_number):
-    try:
-      # ETH -> USDC
-      amount_in = self.w3.to_wei(1, "ether")
-      quote_params = {
-        "tokenIn": self.eurc_contract.address,
-        "tokenOut": self.usdc_contract.address,
-        "fee": self.fee_tier,
-        "amountIn": amount_in,
-        "sqrtPriceLimitX96": 0
-      }
-      bid_amount = self.quoter.functions.quoteExactInputSingle(quote_params).call()
-      bid = bid_amount[0] / (10 ** self.usdc_decimals)
-
-      # USDC -> ETH
-      quote_params = {
-        "tokenIn": self.usdc_contract.address,
-        "tokenOut": self.eurc_contract.address,
-        "fee": self.fee_tier,
-        "amount": amount_in,
-        "sqrtPriceLimitX96": 0
-      }
-      ask_amount = self.quoter.functions.quoteExactOutputSingle(quote_params).call()
-
-      ask = ask_amount[0] / (10 ** self.usdc_decimals)
-
-      self.ticker.update({
-        "bid": float(bid),
-        "ask": float(ask),
-        "timestamp": int(self.w3.eth.get_block(block_number)["timestamp"]) * 1000
-      })
-
-    except ContractLogicError as e:
-      self.logger.error(f"Not enough funds on Blockchain {self.name} with chain id {self.chain_id}")
-    except BlockNotFound as e:
-      self.logger.warning(f"Blockchain {self.name} - Error: {e}")
-      await asyncio.sleep(1)
-    except HTTPError as e:
-      if "Too Many Requests" in e.response.text:
-        self.logger.warning(f"To Many Request on {self.name}")
-        await asyncio.sleep(25)
-
   async def prepare_order_tx(self, side: str, type_: str, amount: float, target_price: float) -> Tuple[
     float, TxParams
   ]:
