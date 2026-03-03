@@ -20,10 +20,11 @@ dotenv.load_dotenv()
 
 
 class UniswapPositionAnalyzer:
-  def __init__(self, db):
+  def __init__(self, db, runtime_state=None):
     self.logger = get_logger()
     self.abi_service = AbiService()
     self.db = db
+    self.runtime_state = runtime_state
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
     self.pool = Pool("0x95DBB3C7546F22BCE375900AbFdd64a4E5bD73d6")
     self.account: LocalAccount = Account.from_key(os.getenv("PRIVATE_KEY"))
@@ -38,6 +39,10 @@ class UniswapPositionAnalyzer:
     self._running = True
 
     while self._running:
+      if self.runtime_state and self.runtime_state.is_sleep_mode():
+        sleep(2)
+        continue
+
       with self.db.session() as session:
         self.block_status = IndexedBlockRepository(session)
         self.position_repo = PositionRepository(session)

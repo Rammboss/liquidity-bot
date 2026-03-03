@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import os
 from dataclasses import dataclass
 from typing import Awaitable
 
@@ -7,9 +8,12 @@ from Configurations import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDR
 from blockchain.Token import Tokens
 from common.logger import get_logger
 from database.database import Database
+from common.TelegramServices import TelegramServices
+from services.ControlService import ControlService
 from services.Executor import Executor
 from services.IndexerService import IndexerService
 from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
+from services.RuntimeState import RuntimeState
 from services.UniswapPositionAnalyzer import UniswapPositionAnalyzer
 
 
@@ -29,18 +33,25 @@ class Application:
   def __init__(self) -> None:
     self.logger = get_logger()
     self.db = Database()
+    self.runtime_state = RuntimeState()
 
   def _build_tasks(self, config: RuntimeConfig) -> list[Awaitable[None]]:
     tasks: list[Awaitable[None]] = []
 
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if telegram_bot_token and telegram_chat_id:
+      telegram = TelegramServices(telegram_bot_token, telegram_chat_id)
+      tasks.append(ControlService(telegram, self.runtime_state).run())
+
     if config.indexer_enabled:
-      tasks.append(IndexerService(self.db).run())
+      tasks.append(asyncio.to_thread(IndexerService(self.db, self.runtime_state).run))
 
     if config.uniswap_position_manager_enabled:
-      tasks.append(UniswapPositionAnalyzer(self.db).run())
+      tasks.append(asyncio.to_thread(UniswapPositionAnalyzer(self.db, self.runtime_state).run))
 
     if config.arbitrage_bot_enabled:
-      executor = Executor()
+      executor = Executor(self.runtime_state)
       tasks.append(executor.run())
 
       arbitrage_analyzer = UniswapArbitrageAnalyzer(
@@ -54,6 +65,7 @@ class Application:
         Tokens.EURC,
         Tokens.USDC,
         executor,
+        self.runtime_state,
       )
       tasks.append(arbitrage_analyzer.run())
 

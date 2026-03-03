@@ -19,10 +19,11 @@ load_dotenv()
 
 
 class IndexerService:
-  def __init__(self, db: Database):
+  def __init__(self, db: Database, runtime_state=None):
     self._running = None
     self.logger = get_logger()
     self.db = db
+    self.runtime_state = runtime_state
     self.account: LocalAccount = Account.from_key(os.getenv("PRIVATE_KEY"))
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
     if not self.w3.is_connected():
@@ -75,6 +76,10 @@ class IndexerService:
     self._running = True
 
     while self._running:
+      if self.runtime_state and self.runtime_state.is_sleep_mode():
+        sleep(2)
+        continue
+
       with self.db.session() as session:
         self.block_repo = IndexedBlockRepository(session)
         self.mint_repo = MintEventsRepository(session)

@@ -54,7 +54,8 @@ class UniswapArbitrageAnalyzer:
       coinbase_product_id, uni_pool_address,
       token0: Tokens,
       token1: Tokens,
-      executor: Executor
+      executor: Executor,
+      runtime_state=None
   ):
     self.logger = get_logger()
     self.w3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
@@ -72,6 +73,7 @@ class UniswapArbitrageAnalyzer:
     self.starting_balance_eth = starting_balance_eth
     self.starting_balance_eurc = starting_balance_eurc
     self.starting_balance_usdc = starting_balance_usdc
+    self.runtime_state = runtime_state
 
   @staticmethod
   def calculate_rebalance(usdc_amount, eurc_amount, eurc_price_in_usdc) -> RebalanceResult:
@@ -189,6 +191,10 @@ class UniswapArbitrageAnalyzer:
 
     while True:
       try:
+        if self.runtime_state and self.runtime_state.is_sleep_mode():
+          await asyncio.sleep(1)
+          continue
+
         if len(self.executor.queue) > 0:
           self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
           await asyncio.sleep(1)
