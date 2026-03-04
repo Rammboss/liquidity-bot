@@ -93,6 +93,8 @@ class ArbitrageExecuteTask(BasicTask):
 
     self.wallet_service.wait_tx_is_mined(HexBytes(tx_hash))
 
+    await asyncio.sleep(10)
+
     total_after = self.account_manager.get_total_balances()
     eth_after = total_after.get(Tokens.ETH)
     profit_usdc = total_after.get(Tokens.USDC) - total_before.get(Tokens.USDC)
@@ -109,6 +111,6 @@ class ArbitrageExecuteTask(BasicTask):
     self.logger.info(profit_string)
     await self.telegram.native_send(profit_string, parse_mode=ParseMode.HTML)
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(10)
 
     self.logger.info("Arbitrage execution completed")
