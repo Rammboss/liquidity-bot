@@ -197,7 +197,7 @@ class UniswapArbitrageAnalyzer:
 
         if len(self.executor.queue) > 0:
           self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
-          await asyncio.sleep(1)
+          await asyncio.sleep(5)
           continue
 
         order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
@@ -232,7 +232,7 @@ class UniswapArbitrageAnalyzer:
         await asyncio.sleep(12)
       except Exception as e:
         self.logger.error(f"Error in main loop: {e}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(10)
 
   async def _process_opportunity(self, side: str, profit_raw: float, target_qty: float,
                                  entry_price: float, order_book_side: list, is_cb_buy: bool
@@ -304,7 +304,7 @@ class UniswapArbitrageAnalyzer:
 
     self.logger.info(f"Profit (incl. costs): {real_profit:.2f}$")
 
-    if real_profit >= -0.30 and (cb_rebasing_needed or wallet_rebasing_needed):
+    if cb_rebasing_needed or wallet_rebasing_needed:
       does_any_wwt_exists_in_queue = next(
         (task for task in self.executor.queue if isinstance(task, WalletWithdrawalTask)),
         False
