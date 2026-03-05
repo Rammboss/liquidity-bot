@@ -197,7 +197,7 @@ class UniswapArbitrageAnalyzer:
 
         if len(self.executor.queue) > 0:
           self.logger.info(f"Executor queue has {len(self.executor.queue)} tasks. Waiting before next analysis...")
-          await asyncio.sleep(5)
+          await asyncio.sleep(10)
           continue
 
         order_book = self.coinbase.get_product_book(self.coinbase.product.product_id)
@@ -294,15 +294,22 @@ class UniswapArbitrageAnalyzer:
     # 3. Logging
     self.logger.info(f"[{side}] Break-even: {trading_costs:.2f} EURC, Min Trade: {break_even:.2f} EURC")
     if is_cb_buy:
+      liquidity_pool = self.pool.get_volume_until_price(self.pool.get_token(t_needed_wallet), entry_price)
       # Side A: Coinbase Buy -> Uniswap Sell
+      self.logger.info(f"Liquidity Pool: {liquidity_pool:.2f}{t_needed_wallet.name}")
       self.logger.info(f"Coinbase - Buy {buy_balance:.2f}$ ---{avg_price_cb:.6f}€---> {buy_outcome:.2f}€")
       self.logger.info(f"Uniswap - Sell {buy_outcome:.2f}€ ---{entry_price:.6f}$---> {buy_outcome * entry_price:.2f}$")
     else:
+      liquidity_pool = self.pool.get_volume_until_price(self.pool.get_token(t_needed_wallet), avg_price_cb)
       # Side B: Uniswap Buy -> Coinbase Sell
+      self.logger.info(f"Liquidity Pool: {liquidity_pool:.2f}{t_needed_wallet.name}")
       self.logger.info(f"Uniswap - Buy: {buy_balance:.2f}$ ---{entry_price:.6f}€---> {buy_outcome:.2f}€")
       self.logger.info(f"Coinbase - Sell {buy_outcome:.2f}€ ---{avg_price_cb:.6f}$---> {buy_outcome * avg_price_cb:.2f}$")
 
     self.logger.info(f"Profit (incl. costs): {real_profit:.2f}$")
+
+    if real_profit <= 0:
+      return
 
     if cb_rebasing_needed or wallet_rebasing_needed:
       does_any_wwt_exists_in_queue = next(
@@ -311,6 +318,8 @@ class UniswapArbitrageAnalyzer:
       )
       if wallet_rebasing_needed and not does_any_wwt_exists_in_queue:
         wallet_bal = self.account_manager.get_wallet_balances().get(t_needed_cb)
+        if wallet_bal < 100:
+          self.logger.warning(f"Wallet balacne is too small: {wallet_bal}{t_needed_wallet.name}, check the trigger logik here ")
         dep_addr = self.coinbase.get_deposit_addresses(t_needed_cb, Network.ETH)
         self.logger.info("Add [WalletWithdrawalTask] to queue...")
         self.executor.queue.append(
@@ -327,8 +336,11 @@ class UniswapArbitrageAnalyzer:
         (task for task in self.executor.queue if isinstance(task, CoinbaseWithdrawalTask)),
         False
       )
+
       if cb_rebasing_needed and not does_any_cwt_exists_in_queue:
         cb_bal = self.account_manager.get_coinbase_balances().get(t_needed_wallet)
+        if cb_bal < 100:
+          self.logger.warning(f"Coinbase balacne is too small: {cb_bal}{t_needed_cb.name}, check the trigger logik here ")
         self.logger.info("Add [CoinbaseWithdrawalTask] to queue...")
         self.executor.queue.append(
           CoinbaseWithdrawalTask(
@@ -339,8 +351,6 @@ class UniswapArbitrageAnalyzer:
             telegram=self.telegram,
             amount=cb_bal * 0.99  # to avoid bad request due invalid balance
           ))
-    elif real_profit <= 0:
-      return
     else:
       self.logger.info("Add [ArbitrageExecuteTask] to queue...")
       self.executor.queue.append(ArbitrageExecuteTask(
