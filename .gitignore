@@ -3,3 +3,4 @@
 .venv
 app/logs
 /logs/app.log
+/data/

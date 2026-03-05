@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copy and install requirements
 COPY ./requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements-linux.txt
 
 # Copy only the `app` folder into /app
 COPY ./app /app

@@ -1,20 +1,20 @@
 services:
-  liquidity_bot:
-    build:
-      context: ./
-      dockerfile: oci/Dockerfile
-    container_name: liquidity_bot
-    restart: no
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./app:/app
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=${POSTGRES_PORT}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+  #  liquidity_bot:
+  #    build:
+  #      context: ./
+  #      dockerfile: oci/Dockerfile
+  #    container_name: liquidity_bot
+  #    restart: no
+  #    ports:
+  #      - "8000:8000"
+  #    volumes:
+  #      - ./app:/app
+  #    environment:
+  #      - POSTGRES_HOST=postgres
+  #      - POSTGRES_PORT=${POSTGRES_PORT}
+  #      - POSTGRES_USER=${POSTGRES_USER}
+  #      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #      - POSTGRES_DB=${POSTGRES_DB}
 
   postgres:
     image: postgres:latest
@@ -50,6 +50,84 @@ services:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+
+  prysm:
+    image: gcr.io/prysmaticlabs/prysm/beacon-chain:stable
+    container_name: prysm-beacon
+    restart: unless-stopped
+    depends_on:
+      - reth
+    ports:
+      - "12002:12002/udp"   # P2P UDP (angepasst an deine Settings)
+      - "13002:13002/tcp"   # P2P TCP (angepasst an deine Settings)
+      - "13400:13400/udp"   # QUIC Port
+      - "3501:3501"         # HTTP API Port (dein Wunsch: 3501)
+      - "4001:4001"         # RPC Port (dein Wunsch: 4001)
+    volumes:
+      - ./data/prysm:/data
+      - ./data/jwt.hex:/jwt.hex:ro
+    command:
+      # Einmalig zum Säubern (kannst du nach dem ersten erfolgreichen Start entfernen)
+      # - --force-clear-db
+      - --mainnet
+      - --datadir=/data
+      - --accept-terms-of-use
+      # Netzwerk & Ports
+      - --p2p-tcp-port=13002
+      - --p2p-udp-port=12002
+      - --p2p-quic-port=13400
+      - --rpc-port=4001
+      - --rpc-host=0.0.0.0
+      - --http-port=3501
+      - --http-host=0.0.0.0
+      - --http-cors-domain=*
+      # Connection zu Reth (Docker-interner Name)
+      - --execution-endpoint=http://reth:8551
+      - --jwt-secret=/jwt.hex
+      # Sync & Analyse-Spezifisch
+      - --checkpoint-sync-url=https://sync-mainnet.beaconcha.in
+      - --genesis-beacon-api-url=https://sync-mainnet.beaconcha.in
+  #      - --enable-experimental-backfill
+  #      - --subscribe-all-data-subnets
+  #      - --disable-last-epoch-targets
+
+
+  # --- Execution Client: Reth ---
+  reth:
+    image: ghcr.io/paradigmxyz/reth:latest
+    container_name: reth-node
+    restart: unless-stopped
+    ports:
+      - "30305:30305/tcp" # P2P Port
+      - "30305:30305/udp" # P2P Port
+      - "8545:8545"       # HTTP RPC
+      - "8546:8546"       # WS RPC
+      - "9001:9001"       # Metrics
+    volumes:
+      - ./data/reth:/data
+      - ./data/jwt.hex:/data/jwt.hex:ro
+    command:
+      - node
+      - --chain=mainnet
+      - --datadir=/data
+      - --storage.v2
+      - --db.max-size=4TB
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,debug,trace,ots,reth
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3,debug,trace,ots,reth
+      - --ws.origins=*
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --authrpc.jwtsecret=/data/jwt.hex
+      - --log.file.directory=/data/logs
+      - --port=30305
+      - --metrics=0.0.0.0:9001
 
 volumes:
   pg_data:

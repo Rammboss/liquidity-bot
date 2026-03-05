@@ -3,7 +3,7 @@
 ### Install
 
 ```shell
-pip install -r requirements.txt
+pip install -r requirements-linux.txt
 ```
 
 ### Install dependencies
@@ -11,5 +11,10 @@ pip install -r requirements.txt
 Generate `requirements.txt` file with the following command:
 
 ```shell
-pip list --not-required --format=freeze > requirements.txt
+# Linux
+pip list --not-required --format=freeze > requirements-linux.txt
+```
+```shell
+# Windows
+pip list --not-required --format=freeze > requirements-windows.txt
 ```
