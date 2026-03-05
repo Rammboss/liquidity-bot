@@ -244,21 +244,21 @@ class UniswapArbitrageAnalyzer:
                                  ):
     t_needed_wallet, t_needed_cb = self._get_needed_tokens(is_cb_buy)
 
-    # 1. Balances & Amounts
-    total_balances = self.account_manager.get_total_balances()
-    wallet_balances = self.account_manager.get_wallet_balances()
+    # 1. Balances & Amounts (single fetch to reduce REST/Node calls per loop)
+    total_balances, wallet_balances, coinbase_balances = self._get_balance_snapshot()
     usdc_balance_total = total_balances.get(Tokens.USDC, 0.0)
-
     eurc_balance_total = total_balances.get(Tokens.EURC, 0.0)
 
     usage = self.DEFAULT_USAGE_RATIO
-    cb_rebasing_needed, wallet_rebasing_needed = await self.check_rebalance(
+    cb_rebasing_needed, wallet_rebasing_needed = self.check_rebalance(
       eurc_balance_total=eurc_balance_total,
       is_cb_buy=is_cb_buy,
       usdc_balance_total=usdc_balance_total,
       t_needed_wallet=t_needed_wallet,
       t_needed_cb=t_needed_cb,
-      usage=usage
+      usage=usage,
+      wallet_balances=wallet_balances,
+      coinbase_balances=coinbase_balances
     )
     buy_balance = min(target_qty, usdc_balance_total * usage)
     target_quantity = buy_balance if is_cb_buy else min(target_qty, eurc_balance_total * usage)
@@ -276,7 +276,7 @@ class UniswapArbitrageAnalyzer:
     eth_price = self.coinbase.get_eth_price()
     pool_swap_fees = await self.pool.get_swap_costs(self.token0.token, buy_outcome, 0, eth_price, True)
     self.logger.info(f"Swap fees:~{pool_swap_fees}$")
-    if wallet_balances.get(Tokens.EURC) < 1:
+    if wallet_balances.get(Tokens.EURC, 0.0) < 1:
       existing_token_on_wallet = Tokens.USDC
     else:
       existing_token_on_wallet = Tokens.EURC
@@ -314,7 +314,9 @@ class UniswapArbitrageAnalyzer:
         cb_rebasing_needed=cb_rebasing_needed,
         t_needed_cb=t_needed_cb,
         t_needed_wallet=t_needed_wallet,
-        eth_price=eth_price
+        eth_price=eth_price,
+        wallet_balances=wallet_balances,
+        coinbase_balances=coinbase_balances
       )
     else:
       self.logger.info("Add [ArbitrageExecuteTask] to queue...")
@@ -332,38 +334,47 @@ class UniswapArbitrageAnalyzer:
         telegram=self.telegram
       ))
 
-  async def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
-                            t_needed_wallet: Tokens, t_needed_cb: Tokens, usage: float
-                            ) -> tuple[bool, bool]:
+  def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
+                      t_needed_wallet: Tokens, t_needed_cb: Tokens, usage: float,
+                      wallet_balances: dict[Tokens, float], coinbase_balances: dict[Tokens, float]
+                      ) -> tuple[bool, bool]:
     cb_rebasing_needed = False
     wallet_rebasing_needed = False
 
     if is_cb_buy:
-      usdc_balance_cb = self.account_manager.get_coinbase_balances().get(Tokens.USDC, 0.0)
+      usdc_balance_cb = coinbase_balances.get(Tokens.USDC, 0.0)
       if self._is_below_usage_threshold(usdc_balance_cb, usdc_balance_total, usage):
         percentage_usdc_on_coinbase = self._safe_ratio(usdc_balance_cb, usdc_balance_total)
         self._log_rebalance_warning(percentage_usdc_on_coinbase, t_needed_cb)
         wallet_rebasing_needed = True
 
-      euroc_balance_wallet = self.account_manager.get_wallet_balances().get(Tokens.EURC, 0.0)
+      euroc_balance_wallet = wallet_balances.get(Tokens.EURC, 0.0)
       if self._is_below_usage_threshold(euroc_balance_wallet, eurc_balance_total, usage):
         percentage_eurc_on_wallet = self._safe_ratio(euroc_balance_wallet, eurc_balance_total)
         self._log_rebalance_warning(percentage_eurc_on_wallet, t_needed_wallet, location="Wallet")
         cb_rebasing_needed = True
     else:
-      eurc_balance_cb = self.account_manager.get_coinbase_balances().get(Tokens.EURC, 0.0)
+      eurc_balance_cb = coinbase_balances.get(Tokens.EURC, 0.0)
       if self._is_below_usage_threshold(eurc_balance_cb, eurc_balance_total, usage):
         percentage_eurc_on_coinbase = self._safe_ratio(eurc_balance_cb, eurc_balance_total)
         self._log_rebalance_warning(percentage_eurc_on_coinbase, t_needed_cb)
         wallet_rebasing_needed = True
 
-      usdc_balance_wallet = self.account_manager.get_wallet_balances().get(Tokens.USDC, 0.0)
+      usdc_balance_wallet = wallet_balances.get(Tokens.USDC, 0.0)
       if self._is_below_usage_threshold(usdc_balance_wallet, usdc_balance_total, usage):
         percentage_usdc_on_wallet = self._safe_ratio(usdc_balance_wallet, usdc_balance_total)
         self._log_rebalance_warning(percentage_usdc_on_wallet, t_needed_wallet, location="Wallet")
         cb_rebasing_needed = True
 
     return cb_rebasing_needed, wallet_rebasing_needed
+
+
+  def _get_balance_snapshot(self) -> tuple[dict[Tokens, float], dict[Tokens, float], dict[Tokens, float]]:
+    """Fetch account balances once to minimize REST/Node calls per arbitrage cycle."""
+    total_balances = self.account_manager.get_total_balances()
+    wallet_balances = self.account_manager.get_wallet_balances()
+    coinbase_balances = self.account_manager.get_coinbase_balances()
+    return total_balances, wallet_balances, coinbase_balances
 
   @staticmethod
   def _get_needed_tokens(is_cb_buy: bool) -> tuple[Tokens, Tokens]:
@@ -406,9 +417,10 @@ class UniswapArbitrageAnalyzer:
     return any(isinstance(task, task_type) for task in self.executor.queue)
 
   def _enqueue_rebalance_tasks(self, wallet_rebasing_needed: bool, cb_rebasing_needed: bool,
-                               t_needed_cb: Tokens, t_needed_wallet: Tokens, eth_price: float):
+                               t_needed_cb: Tokens, t_needed_wallet: Tokens, eth_price: float,
+                               wallet_balances: dict[Tokens, float], coinbase_balances: dict[Tokens, float]):
     if wallet_rebasing_needed and not self._has_queued_task(WalletWithdrawalTask):
-      wallet_bal = self.account_manager.get_wallet_balances().get(t_needed_cb)
+      wallet_bal = wallet_balances.get(t_needed_cb, 0.0)
       if wallet_bal < 100:
         self.logger.warning(
           f"Wallet balacne is too small: {wallet_bal}{t_needed_wallet.name}, check the trigger logik here ")
@@ -426,7 +438,7 @@ class UniswapArbitrageAnalyzer:
         ))
 
     if cb_rebasing_needed and not self._has_queued_task(CoinbaseWithdrawalTask):
-      cb_bal = self.account_manager.get_coinbase_balances().get(t_needed_wallet)
+      cb_bal = coinbase_balances.get(t_needed_wallet, 0.0)
       if cb_bal < 100:
         self.logger.warning(
           f"Coinbase balacne is too small: {cb_bal}{t_needed_cb.name}, check the trigger logik here ")
