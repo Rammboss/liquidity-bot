@@ -43,7 +43,8 @@ class CoinbaseWithdrawalTask(BasicTask):
     if self.amount is not None:
       withdraw_amount = self.amount
       if raw_coinbase_balance < withdraw_amount:
-        raise ValueError(f"Insufficient funds. Have {raw_coinbase_balance}, requested {self.amount} {self.token.symbol}")
+        raise ValueError(
+          f"Insufficient funds. Have {raw_coinbase_balance}, requested {self.amount} {self.token.symbol}")
     else:
       withdraw_amount = raw_coinbase_balance
 

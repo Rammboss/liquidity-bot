@@ -7,13 +7,13 @@ from eth_account.signers.local import LocalAccount
 from web3 import Web3
 from web3._utils.events import get_event_data
 
+from blockchain.uniswap.NoneFungibleTokenManager import NoneFungibleTokenManager
+from blockchain.uniswap.Pool import Pool
+from common.logger import get_logger
 from database.database import Database
 from database.models import Position
 from database.repositories import (CollectEventsRepository, IndexedBlockRepository, MintEventsRepository,
                                    PositionRepository)
-from common.logger import get_logger
-from blockchain.uniswap.NoneFungibleTokenManager import NoneFungibleTokenManager
-from blockchain.uniswap.Pool import Pool
 
 load_dotenv()
 

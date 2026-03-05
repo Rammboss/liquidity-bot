@@ -53,7 +53,8 @@ class WalletWithdrawalTask(BasicTask):
     if raw_withdraw_amount <= 0:
       raise ValueError(f"Withdraw amount must be greater than 0 (Balance: {raw_wallet_balance})")
 
-    self.logger.info(f"Withdrawing {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.name} to {self.destination}")
+    self.logger.info(
+      f"Withdrawing {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.name} to {self.destination}")
 
     latest_block = self.w3.eth.get_block('latest')
     # 2. Your manual Priority Fee (0.01 Gwei)
@@ -83,7 +84,8 @@ class WalletWithdrawalTask(BasicTask):
     self.logger.info(f"Estimated gas cost: {estimated_actual_cost:.18f} ETH = {gas_cost_usd:.4f} USD")
 
     if gas_cost_usd > 1:
-      raise ValueError(f"Estimated gas cost of ${gas_cost_usd:.2f} exceeds safety threshold. Aborting withdrawal.")
+      raise ValueError(
+        f"Estimated gas cost of ${gas_cost_usd:.2f} exceeds safety threshold. Aborting withdrawal.")
 
     signed_tx = self.wallet_service.wallet.sign_transaction(tx)
     tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
@@ -102,4 +104,5 @@ class WalletWithdrawalTask(BasicTask):
 
       self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")
     else:
-      self.logger.error(f"Withdrawal transaction failed: Status mined: {is_mined}, Status coinbase: {arrived_on_cb}")
+      self.logger.error(
+        f"Withdrawal transaction failed: Status mined: {is_mined}, Status coinbase: {arrived_on_cb}")

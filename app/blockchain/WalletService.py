@@ -1,4 +1,3 @@
-import asyncio
 import os
 import time
 
@@ -38,7 +37,8 @@ class WalletService:
   def wait_tx_is_mined(self, tx_hash: Hash32 | HexBytes | HexStr, timeout: int = DEFAULT_TIMEOUT_ORDERS):
     self.logger.info(f"Waiting for transaction {tx_hash.hex()} to be mined...")
     receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
-    self.logger.info(f"Transaction {tx_hash.hex()} mined in block {receipt.blockNumber} with status {receipt.status}")
+    self.logger.info(
+      f"Transaction {tx_hash.hex()} mined in block {receipt.blockNumber} with status {receipt.status}")
     return receipt
 
   def wait_till_coins_arrive(self, token: Token, timeout_seconds: int = DEFAULT_TIMEOUT_ORDERS) -> bool:
@@ -50,7 +50,8 @@ class WalletService:
     while True:
       elapsed_time = time.time() - start_time
       if elapsed_time > timeout_seconds:
-        self.logger.warning(f"Timeout: Coins ({token.symbol}) did not arrive within {timeout_seconds // 60} minutes.")
+        self.logger.warning(
+          f"Timeout: Coins ({token.symbol}) did not arrive within {timeout_seconds // 60} minutes.")
         return False
 
       balance_after = token.contract.functions.balanceOf(self.wallet.address).call()

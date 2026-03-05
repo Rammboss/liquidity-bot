@@ -71,7 +71,8 @@ class Coinbase:
     # Zählt Stellen nach dem Punkt, entfernt unnötige Nullen am Ende
     return len(increment_str.split(".")[1].rstrip('0'))
 
-  def create_order(self, token0: Tokens, token1: Tokens, side: str, type_: str, amount: float, price: Optional[float] = None):
+  def create_order(self, token0: Tokens, token1: Tokens, side: str, type_: str, amount: float,
+                   price: Optional[float] = None):
     side = side.lower()
     type_ = type_.lower()
     if side not in ('buy', 'sell') or type_ not in ('limit', 'market'):

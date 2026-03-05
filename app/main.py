@@ -6,14 +6,14 @@ from typing import Awaitable
 
 from Configurations import COINBASE_EURC_USDC_TICKER, EURO_USDC_UNI_V3_POOL_ADDRESS
 from blockchain.Token import Tokens
+from common.TelegramServices import TelegramServices
 from common.logger import get_logger
 from database.database import Database
-from common.TelegramServices import TelegramServices
 from services.ControlService import ControlService
 from services.Executor import Executor
 from services.IndexerService import IndexerService
-from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
 from services.RuntimeState import RuntimeState
+from services.UniswapArbitrageAnalyzer import UniswapArbitrageAnalyzer
 from services.UniswapPositionAnalyzer import UniswapPositionAnalyzer
 
 

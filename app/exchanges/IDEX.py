@@ -8,7 +8,7 @@ from typing import Literal, Tuple
 import dotenv
 from eth_account.datastructures import SignedTransaction
 from eth_account.signers.local import LocalAccount
-from web3 import AsyncWeb3, Web3, WebSocketProvider
+from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.types import TxParams, TxReceipt
 

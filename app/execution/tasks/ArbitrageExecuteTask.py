@@ -57,7 +57,8 @@ class ArbitrageExecuteTask(BasicTask):
         eth_price=self.eth_price,
         min_amount_out=self.t1_expected_outcome * 0.999  # Slippage von 0.1% einplanen
       )
-      self.logger.info(f"Executing sell on Coinbase for {self.t1_start_amount} with expected outcome {self.t2_expected_outcome}")
+      self.logger.info(
+        f"Executing sell on Coinbase for {self.t1_start_amount} with expected outcome {self.t2_expected_outcome}")
       order = self.coinbase.create_order(
         token0=self.pool.token0.token,
         token1=self.pool.token1.token,
@@ -69,7 +70,8 @@ class ArbitrageExecuteTask(BasicTask):
       self.logger.info(f"Coinbase sell order created: {order}")
     else:
       # 2. Verkauf auf Uniswap
-      self.logger.info(f"Executing sell on Uniswap for {self.t1_expected_outcome} with expected outcome {self.t2_expected_outcome}")
+      self.logger.info(
+        f"Executing sell on Uniswap for {self.t1_expected_outcome} with expected outcome {self.t2_expected_outcome}")
       tx_hash = await self.pool.swap(
         token_in=Tokens.EURC,
         amount_in=self.t1_expected_outcome,

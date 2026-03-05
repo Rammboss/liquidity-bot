@@ -32,7 +32,8 @@ class AccountManager:
   def get_wallet_balances(self):
     usdc = self.usdc.to_human(self.usdc.contract.functions.balanceOf(self.wallet.address).call())
     eurc = self.eurc.to_human(self.eurc.contract.functions.balanceOf(self.wallet.address).call())
-    eth = float(self.wallet_service.w3.from_wei(self.wallet_service.w3.eth.get_balance(self.wallet.address), "ether"))
+    eth_raw = self.wallet_service.w3.eth.get_balance(self.wallet.address)
+    eth = float(self.wallet_service.w3.from_wei(eth_raw, "ether"))
 
     return {
       Tokens.USDC: usdc,

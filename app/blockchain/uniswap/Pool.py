@@ -222,7 +222,8 @@ class Pool:
     tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
     return tx_hash.hex()
 
-  async def get_swap_costs(self, token_in: Tokens, amount_in: float, min_amount_out: float, eth_price: float, static=False) -> float:
+  async def get_swap_costs(self, token_in: Tokens, amount_in: float, min_amount_out: float, eth_price: float,
+                           static=False) -> float:
 
     if static:
       # 1. Get current Base Fee

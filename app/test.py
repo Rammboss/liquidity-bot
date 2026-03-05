@@ -135,7 +135,8 @@ async def main():
 
   gas_costs = w3.eth.estimate_gas(tx) * w3.eth.gas_price
   eth_price = 1950
-  logger.info(f"Gas costs for transfer: {w3.from_wei(gas_costs, 'ether'):.18f} ETH = {w3.from_wei(gas_costs, 'ether') * eth_price:.2f} USDC")
+  logger.info(
+    f"Gas costs for transfer: {w3.from_wei(gas_costs, 'ether'):.18f} ETH = {w3.from_wei(gas_costs, 'ether') * eth_price:.2f} USDC")
   signed_tx = w3.eth.account.sign_transaction(tx, account_manager.wallet.key)
   w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 

@@ -1,17 +1,14 @@
-import asyncio
 from typing import Literal, Tuple
 
 from eth_account.datastructures import SignedTransaction
-from requests.exceptions import HTTPError
 from uniswap_universal_router_decoder import FunctionRecipient, RouterCodec
-from web3.exceptions import BlockNotFound, ContractLogicError
 from web3.types import TxParams, Wei
 
-from blockchain.Token import Token as Token2, Token, Tokens
 from app.Configurations import SLIPPAGE
 from app.blockchain.Contract import Contract
-from common.errors.PriceExceededError import PriceExceededError
 from app.exchanges.IDEX import ChainName, IDEX
+from blockchain.Token import Token as Token2, Token, Tokens
+from common.errors.PriceExceededError import PriceExceededError
 from common.logger import get_logger
 
 
@@ -201,6 +198,3 @@ class UniswapV3(IDEX):
     bid_amount = self.quoter.functions.quoteExactInputSingle(quote_params).call()
     bid = bid_amount[0] / (10 ** self.usdc_decimals)
     return bid
-
-
-

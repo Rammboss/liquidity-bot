@@ -8,13 +8,13 @@ from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import Web3
 
-from blockchain.Contract import Contract
-from database.repositories import IndexedBlockRepository, PositionRepository
-from common.logger import get_logger
 from blockchain.AbiService import AbiService
+from blockchain.Contract import Contract
 from blockchain.uniswap.NoneFungibleTokenManager import NoneFungibleTokenManager
 from blockchain.uniswap.Pool import Pool
 from blockchain.uniswap.QuoterV3 import QuoterV3
+from common.logger import get_logger
+from database.repositories import IndexedBlockRepository, PositionRepository
 
 dotenv.load_dotenv()
 

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
-from database.models import CollectEvent, IndexedStatus, MintEvent, Position
 from common.logger import get_logger
+from database.models import CollectEvent, IndexedStatus, MintEvent, Position
 
 
 class IndexedBlockRepository:

@@ -14,6 +14,7 @@ Generate `requirements.txt` file with the following command:
 # Linux
 pip list --not-required --format=freeze > requirements-linux.txt
 ```
+
 ```shell
 # Windows
 pip list --not-required --format=freeze > requirements-windows.txt
