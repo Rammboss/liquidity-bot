@@ -1,11 +1,9 @@
 import dotenv
-from telegram.constants import ParseMode
 
 from blockchain.Network import Network
 from blockchain.Token import Token
 from blockchain.WalletService import WalletService
 from common.AccountManager import AccountManager
-from common.TelegramServices import TelegramServices
 from common.logger import get_logger
 from exchanges.Coinbase.Coinbase import Coinbase
 from execution.BasicTask import BasicTask
@@ -21,7 +19,6 @@ class CoinbaseWithdrawalTask(BasicTask):
       wallet_service: WalletService,
       account_manager: AccountManager,
       token: Token,
-      telegram: TelegramServices,
       destination: str = None,
       amount: float = None,
       priority: int = 5
@@ -35,7 +32,7 @@ class CoinbaseWithdrawalTask(BasicTask):
 
     self.coinbase = coinbase
     self.account_manager = account_manager
-    self.telegram = telegram
+    self.execution_summary: str | None = None
 
   async def run(self):
     raw_coinbase_balance = self.account_manager.get_coinbase_balances().get(self.token.token)
@@ -58,9 +55,13 @@ class CoinbaseWithdrawalTask(BasicTask):
     mined = self.wallet_service.wait_till_coins_arrive(self.token)
     if mined:
       self.logger.info(f"Order filled: {response['data']['id']}")
-      await self.telegram.native_send(
-        f"✅ Coinbase withdrawal complete | {self.token.symbol}: {withdraw_amount:.2f} | ID: {response['data']['id']}",
-        ParseMode.HTML
+      self.execution_summary = (
+        f"✅ Coinbase withdrawal complete | {self.token.symbol}: {withdraw_amount:.2f} "
+        f"| ID: {response['data']['id']}"
       )
     else:
+      self.execution_summary = f"⚠️ Coinbase withdrawal timeout | ID: {response['data']['id']}"
       self.logger.warning(f"Order not filled within timeout: {response['data']['id']}")
+
+  def build_control_message(self) -> str | None:
+    return self.execution_summary

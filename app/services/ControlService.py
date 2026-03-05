@@ -55,4 +55,12 @@ class ControlService:
     else:
       self.logger.info("Task snapshot: queue empty")
 
+    task_events = self.runtime_state.pop_task_events()
+    if task_events:
+      self.logger.info(f"Sending bundled task report with {len(task_events)} event(s) to Telegram.")
+      message = "🧾 Task Report (5m)\n" + "\n".join(f"{idx}. {event}" for idx, event in enumerate(task_events, start=1))
+      await self.telegram.native_send(message)
+    else:
+      self.logger.info("Skip Telegram task report: no new task events.")
+
     self._last_task_report_at = now

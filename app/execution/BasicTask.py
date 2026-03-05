@@ -9,3 +9,7 @@ class BasicTask(ABC):
   async def run(self):
     """Override this method to implement the task's logic."""
     pass
+
+  def build_control_message(self) -> str | None:
+    """Optional aggregated status message consumed by ControlService."""
+    return None

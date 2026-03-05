@@ -1,13 +1,11 @@
 import asyncio
 
 from hexbytes import HexBytes
-from telegram.constants import ParseMode
 
 from blockchain.Token import Tokens
 from blockchain.WalletService import WalletService
 from blockchain.uniswap.Pool import Pool
 from common.AccountManager import AccountManager
-from common.TelegramServices import TelegramServices
 from common.logger import get_logger
 from exchanges.Coinbase.Coinbase import Coinbase
 from execution.BasicTask import BasicTask
@@ -25,8 +23,9 @@ class ArbitrageExecuteTask(BasicTask):
       t1_expected_outcome: float,
       t2_expected_outcome: float,
       cb_price: float,
+      pool_liquidity: float,
+      cb_available_volume: float,
       eth_price: float,
-      telegram: TelegramServices,
       priority=1
   ):
     super().__init__(priority)
@@ -41,21 +40,22 @@ class ArbitrageExecuteTask(BasicTask):
     self.t1_expected_outcome = t1_expected_outcome
     self.t2_expected_outcome = t2_expected_outcome
     self.cb_price = cb_price
+    self.pool_liquidity = pool_liquidity
+    self.cb_available_volume = cb_available_volume
     self.eth_price = eth_price
-    self.telegram = telegram
+    self.execution_summary: str | None = None
 
   async def run(self):
     total_before = self.account_manager.get_total_balances()
     eth_before = total_before.get(Tokens.ETH)
 
     if self.sell_coinbase_buy_uni:
-      # 2. Kauf auf Uniswap
       self.logger.info(f"Executing buy on Uniswap for {self.t1_expected_outcome}")
       tx_hash = await self.pool.swap(
         token_in=Tokens.USDC,
         amount_in=self.t1_start_amount,
         eth_price=self.eth_price,
-        min_amount_out=self.t1_expected_outcome * 0.999  # Slippage von 0.1% einplanen
+        min_amount_out=self.t1_expected_outcome * 0.999
       )
       self.logger.info(
         f"Executing sell on Coinbase for {self.t1_start_amount} with expected outcome {self.t2_expected_outcome}")
@@ -69,16 +69,14 @@ class ArbitrageExecuteTask(BasicTask):
       )
       self.logger.info(f"Coinbase sell order created: {order}")
     else:
-      # 2. Verkauf auf Uniswap
       self.logger.info(
         f"Executing sell on Uniswap for {self.t1_expected_outcome} with expected outcome {self.t2_expected_outcome}")
       tx_hash = await self.pool.swap(
         token_in=Tokens.EURC,
         amount_in=self.t1_expected_outcome,
         eth_price=self.eth_price,
-        min_amount_out=self.t2_expected_outcome * 0.999  # Slippage von 0.1% einplanen
+        min_amount_out=self.t2_expected_outcome * 0.999
       )
-      # 1. Kauf auf Coinbase
       self.logger.info(f"Executing buy on Coinbase for {self.t1_start_amount}")
       order = self.coinbase.create_order(
         token0=self.pool.token0.token,
@@ -105,14 +103,16 @@ class ArbitrageExecuteTask(BasicTask):
     eth_fees = eth_after - eth_before
     eth_fees_cost_usd = eth_fees * self.eth_price
 
-    total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price + eth_fees_cost_usd  # + fees because negative
-    profit_string = (
-      f"✅ Arb done | PnL: {total_profit_in_usdc:.2f} USDC\n"
-      f"USDC: {profit_usdc:.2f} | EURC: {profit_eurc:.2f} | Fee: ${eth_fees_cost_usd:.2f}"
+    total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price + eth_fees_cost_usd
+    self.execution_summary = (
+      f"✅ Arb done | PnL: {total_profit_in_usdc:.2f} USDC | "
+      f"USDC: {profit_usdc:.2f} | EURC: {profit_eurc:.2f} | Fee: ${eth_fees_cost_usd:.2f} | "
+      f"Liquidity(Pool): {self.pool_liquidity:.4f} | Volume(CB): {self.cb_available_volume:.4f}"
     )
-    self.logger.info(profit_string)
-    await self.telegram.native_send(profit_string, parse_mode=ParseMode.HTML)
+    self.logger.info(self.execution_summary)
 
     await asyncio.sleep(10)
-
     self.logger.info("Arbitrage execution completed")
+
+  def build_control_message(self) -> str | None:
+    return self.execution_summary

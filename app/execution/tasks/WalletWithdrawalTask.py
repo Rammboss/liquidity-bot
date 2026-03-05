@@ -1,12 +1,10 @@
 import os
 
 import dotenv
-from telegram.constants import ParseMode
 from web3 import Web3
 
 from blockchain.Token import Token
 from blockchain.WalletService import WalletService
-from common.TelegramServices import TelegramServices
 from common.logger import get_logger
 from exchanges.Coinbase.Coinbase import Coinbase
 from execution.BasicTask import BasicTask
@@ -21,7 +19,6 @@ class WalletWithdrawalTask(BasicTask):
       send_token: Token,
       destination: str,
       eth_price: float,
-      telegram: TelegramServices,
       coinbase: Coinbase,
       amount: float = None,
       priority: int = 5
@@ -34,8 +31,8 @@ class WalletWithdrawalTask(BasicTask):
     self.destination = destination
     self.amount = amount
     self.eth_price = eth_price
-    self.telegram = telegram
     self.coinbase = coinbase
+    self.execution_summary: str | None = None
 
   async def run(self):
     raw_wallet_balance = self.send_token.contract.functions.balanceOf(self.wallet_service.wallet.address).call()
@@ -57,10 +54,8 @@ class WalletWithdrawalTask(BasicTask):
       f"Withdrawing {self.send_token.to_human(raw_withdraw_amount)} {self.send_token.name} to {self.destination}")
 
     latest_block = self.w3.eth.get_block('latest')
-    # 2. Your manual Priority Fee (0.01 Gwei)
     base_fee = latest_block['baseFeePerGas']
     prio_fee = self.w3.to_wei(0.005, 'gwei')
-
     max_fee_per_gas = int(base_fee * 1.125) + prio_fee
 
     tx = self.send_token.contract.functions.transfer(
@@ -74,10 +69,7 @@ class WalletWithdrawalTask(BasicTask):
     })
 
     gas = self.w3.eth.estimate_gas(tx)
-
     current_base_fee = self.w3.eth.get_block('latest')['baseFeePerGas']
-
-    # This is what you will likely actually pay
     estimated_actual_cost = float(self.w3.from_wei(tx['gas'] * (current_base_fee + prio_fee), "ether"))
 
     gas_cost_usd = estimated_actual_cost * self.eth_price
@@ -93,16 +85,21 @@ class WalletWithdrawalTask(BasicTask):
 
     is_mined = self.wallet_service.wait_tx_is_mined(tx_hash, timeout=300)
     self.logger.info("Tx mined.")
-    self.logger.info(f"Waiting till funds are available in coinbase...")
+    self.logger.info("Waiting till funds are available in coinbase...")
     arrived_on_cb = await self.coinbase.wait_till_deposit_arrives(self.send_token)
 
     if arrived_on_cb and is_mined:
-      await self.telegram.native_send(
-        f"✅ Wallet→CB transfer done | {self.send_token.to_human(raw_withdraw_amount):.2f} {self.send_token.symbol} | Tx: {tx_hash.hex()[:10]}...",
-        ParseMode.HTML
+      self.execution_summary = (
+        f"✅ Wallet→CB transfer done | {self.send_token.to_human(raw_withdraw_amount):.2f} "
+        f"{self.send_token.symbol} | Tx: {tx_hash.hex()[:10]}..."
       )
-
       self.logger.info(f"Withdrawal transaction completed: {tx_hash.hex()}")
     else:
+      self.execution_summary = (
+        f"⚠️ Wallet→CB transfer incomplete | mined={is_mined} | cb_arrived={arrived_on_cb}"
+      )
       self.logger.error(
         f"Withdrawal transaction failed: Status mined: {is_mined}, Status coinbase: {arrived_on_cb}")
+
+  def build_control_message(self) -> str | None:
+    return self.execution_summary

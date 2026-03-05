@@ -239,8 +239,12 @@ class UniswapArbitrageAnalyzer:
     )
     buy_balance = min(target_qty, usdc_balance_total * usage)
     target_quantity = buy_balance if is_cb_buy else min(target_qty, eurc_balance_total * usage)
-    avg_price_cb, _ = self.get_average_price(book_side=order_book_side, limit_price=entry_price, is_ask=is_cb_buy,
-                                             target_quantity=target_quantity)
+    avg_price_cb, cb_available_volume = self.get_average_price(
+      book_side=order_book_side,
+      limit_price=entry_price,
+      is_ask=is_cb_buy,
+      target_quantity=target_quantity
+    )
 
     if not avg_price_cb:
       return
@@ -269,6 +273,12 @@ class UniswapArbitrageAnalyzer:
     sell_price = entry_price if is_cb_buy else avg_price_cb
     real_profit = (buy_outcome * sell_price - buy_balance) - trading_costs
 
+    liquidity_reference_price = entry_price if is_cb_buy else avg_price_cb
+    liquidity_pool = self.pool.get_volume_until_price(
+      self.pool.get_token(t_needed_wallet),
+      liquidity_reference_price
+    )
+
     self._log_opportunity_summary(
       side=side,
       is_cb_buy=is_cb_buy,
@@ -279,7 +289,9 @@ class UniswapArbitrageAnalyzer:
       buy_outcome=buy_outcome,
       trading_costs=trading_costs,
       break_even=break_even,
-      real_profit=real_profit
+      real_profit=real_profit,
+      liquidity_pool=liquidity_pool,
+      cb_available_volume=cb_available_volume
     )
 
     if real_profit <= 0:
@@ -300,7 +312,8 @@ class UniswapArbitrageAnalyzer:
       self.logger.info(
         f"Add [ArbitrageExecuteTask] to queue | side={side} | in={buy_balance:.2f} USDC | "
         f"out={buy_outcome:.4f} EURC | quote_out={expected_quote_out:.2f} USDC | "
-        f"profit={real_profit:.2f} USDC"
+        f"profit={real_profit:.2f} USDC | pool_liquidity={liquidity_pool:.4f} {t_needed_wallet.name} | "
+        f"cb_volume={cb_available_volume:.4f}"
       )
       self.executor.queue.append(ArbitrageExecuteTask(
         coinbase=self.coinbase,
@@ -312,8 +325,9 @@ class UniswapArbitrageAnalyzer:
         t1_expected_outcome=buy_outcome,
         t2_expected_outcome=expected_quote_out,
         cb_price=avg_price_cb if is_cb_buy else entry_price,
-        eth_price=eth_price,
-        telegram=self.telegram
+        pool_liquidity=liquidity_pool,
+        cb_available_volume=cb_available_volume,
+        eth_price=eth_price
       ))
 
   def check_rebalance(self, eurc_balance_total: float | Any, is_cb_buy: bool, usdc_balance_total: float | Any,
@@ -378,11 +392,10 @@ class UniswapArbitrageAnalyzer:
   def _log_opportunity_summary(self, side: str, is_cb_buy: bool, t_needed_wallet: Tokens,
                                buy_balance: float, avg_price_cb: float, entry_price: float,
                                buy_outcome: float, trading_costs: float, break_even: float,
-                               real_profit: float):
+                               real_profit: float, liquidity_pool: float, cb_available_volume: float):
     self.logger.info(f"[{side}] Break-even: {trading_costs:.2f} EURC, Min Trade: {break_even:.2f} EURC")
-    liquidity_reference_price = entry_price if is_cb_buy else avg_price_cb
-    liquidity_pool = self.pool.get_volume_until_price(self.pool.get_token(t_needed_wallet), liquidity_reference_price)
-    self.logger.info(f"Liquidity Pool: {liquidity_pool:.2f}{t_needed_wallet.name}")
+    self.logger.info(f"Liquidity Pool: {liquidity_pool:.2f} {t_needed_wallet.name}")
+    self.logger.info(f"Coinbase Available Volume: {cb_available_volume:.4f}")
 
     if is_cb_buy:
       self.logger.info(f"Coinbase - Buy {buy_balance:.2f}$ ---{avg_price_cb:.6f}€---> {buy_outcome:.2f}€")
@@ -423,7 +436,11 @@ class UniswapArbitrageAnalyzer:
       f"Total Profit: {total_profit_usdc:.2f} USDC\n"
       f"Queue: {', '.join(task_snapshot) if task_snapshot else 'empty'}"
     )
-    await self.telegram.native_send(telegram_message)
+    if task_snapshot:
+      await self.telegram.native_send(telegram_message)
+    else:
+      self.logger.info("Skip Telegram periodic report: no events/tasks in queue.")
+
     self._last_report_ts = now_ts
 
   def _compute_performance_metrics(self, total_balances: dict[Tokens, float], eurc_price: float,
@@ -484,7 +501,6 @@ class UniswapArbitrageAnalyzer:
           send_token=self.pool.get_token(t_needed_cb),
           destination=dep_addr,
           eth_price=eth_price,
-          telegram=self.telegram,
           coinbase=self.coinbase,
           amount=wallet_bal
         ))
@@ -501,6 +517,5 @@ class UniswapArbitrageAnalyzer:
           wallet_service=self.wallet_service,
           account_manager=self.account_manager,
           token=self.pool.get_token(t_needed_wallet),
-          telegram=self.telegram,
           amount=cb_bal * 0.99  # to avoid bad request due invalid balance
         ))

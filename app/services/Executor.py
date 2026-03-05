@@ -29,8 +29,15 @@ class Executor:
       snapshot.append(f"{task.__class__.__name__}(prio={task.priority}{amount_details})")
     return snapshot
 
+  def _collect_task_event(self, task: BasicTask) -> None:
+    if not self.runtime_state:
+      return
+
+    event_message = task.build_control_message()
+    if event_message:
+      self.runtime_state.push_task_event(event_message)
+
   async def run(self):
-    # Ensure executor starts from a clean queue.
     self.clear_queue()
 
     while True:
@@ -40,14 +47,12 @@ class Executor:
           continue
 
         if self.queue:
-          # Sort ascending: highest priority moves to the end of the list
           self.queue.sort(key=lambda t: t.priority)
-
-          # Get the last item (highest priority)
           task = self.queue[-1]
           self.logger.info(f"Starting task {task.__class__.__name__} with priority {task.priority}")
 
           await task.run()
+          self._collect_task_event(task)
           self.queue.pop()
           self.logger.info(f"Task {task.__class__.__name__} completed.")
         else:
@@ -59,6 +64,7 @@ class Executor:
 
         if self.queue:
           failed_task = self.queue.pop()
+          self._collect_task_event(failed_task)
           self.logger.warning(f"Removed failed task {failed_task.__class__.__name__} from queue.")
         else:
           self.logger.warning("Queue already empty after error; nothing to remove.")
