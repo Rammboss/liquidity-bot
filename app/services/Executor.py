@@ -16,6 +16,19 @@ class Executor:
       self.logger.warning(f"Clearing executor queue with {len(self.queue)} pending task(s).")
     self.queue.clear()
 
+  def get_task_snapshot(self) -> list[str]:
+    snapshot: list[str] = []
+    for task in sorted(self.queue, key=lambda t: t.priority, reverse=True):
+      amount = getattr(task, "amount", None)
+      t1_amount = getattr(task, "t1_stat_amount", None)
+      amount_details = ""
+      if isinstance(amount, (int, float)):
+        amount_details = f" amount={amount:.4f}"
+      elif isinstance(t1_amount, (int, float)):
+        amount_details = f" amount={t1_amount:.4f}"
+      snapshot.append(f"{task.__class__.__name__}(prio={task.priority}{amount_details})")
+    return snapshot
+
   async def run(self):
     # Ensure executor starts from a clean queue.
     self.clear_queue()

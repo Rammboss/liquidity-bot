@@ -1,15 +1,26 @@
+from datetime import datetime, timedelta, timezone
+
 import telegram
 from telegram.constants import ParseMode
 
 
 class TelegramServices:
+  DEFAULT_MIN_SEND_INTERVAL_SECONDS = 300
+
   def __init__(self, bot_token, chat_id):
     self.bot = telegram.Bot(token=bot_token)
     self.chat_id = chat_id
     self.last_update_id = 0
+    self.last_sent_at: datetime | None = None
 
-  async def native_send(self, msg: str, parse_mode: ParseMode | None = None):
+  async def native_send(self, msg: str, parse_mode: ParseMode | None = None, force: bool = False):
+    if not force and self.last_sent_at:
+      since_last_send = datetime.now(timezone.utc) - self.last_sent_at
+      if since_last_send < timedelta(seconds=self.DEFAULT_MIN_SEND_INTERVAL_SECONDS):
+        return
+
     await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode=parse_mode)
+    self.last_sent_at = datetime.now(timezone.utc)
 
   async def send_message(
       self,
@@ -33,6 +44,7 @@ class TelegramServices:
       f"💰 Profit: {profit:.2f}"
     )
     await self.bot.send_message(chat_id=self.chat_id, text=pretty_text, parse_mode=ParseMode.HTML)
+    self.last_sent_at = datetime.now(timezone.utc)
 
   async def mark_updates_as_seen(self):
     updates = await self.bot.get_updates(timeout=1)

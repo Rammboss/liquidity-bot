@@ -46,6 +46,7 @@ class RebalanceResult:
 class UniswapArbitrageAnalyzer:
   CB_FEE_RATE = 0.00001
   DEFAULT_USAGE_RATIO = 0.95
+  REPORT_INTERVAL_SECONDS = 300
 
   def __init__(
       self,
@@ -77,6 +78,7 @@ class UniswapArbitrageAnalyzer:
     self.starting_balance_eurc = starting_balance_eurc
     self.starting_balance_usdc = starting_balance_usdc
     self.runtime_state = runtime_state
+    self._last_report_ts = 0.0
 
   @staticmethod
   def calculate_rebalance(usdc_amount, eurc_amount, eurc_price_in_usdc) -> RebalanceResult:
@@ -155,42 +157,12 @@ class UniswapArbitrageAnalyzer:
     result = self.calculate_rebalance(total.get(Tokens.USDC), total.get(Tokens.EURC), ask_price)
     eth_price = self.coinbase.get_eth_price()
 
-    # Calc overall profit from constructor values
-    current_date = datetime.now(timezone.utc)
-
-    if self.starting_date.tzinfo is None:
-      starting_date_aware = self.starting_date.replace(tzinfo=timezone.utc)
-    else:
-      starting_date_aware = self.starting_date
-
-    runtime_delta = current_date - starting_date_aware
-
-    profit_eth = total.get(Tokens.ETH) - self.starting_balance_eth
-    profit_eurc = total.get(Tokens.EURC) - self.starting_balance_eurc
-    profit_usdc = total.get(Tokens.USDC) - self.starting_balance_usdc
-
-    total_profit_usdc = profit_eth * eth_price + profit_eurc * ask_price + profit_usdc
-
-    self.logger.info(f"Total profit: {total_profit_usdc}$")
-    self.logger.info(f"balances @start: {self.starting_balance_eurc}€ | {self.starting_balance_usdc}$")
-    self.logger.info(f"balances now: {total.get(Tokens.EURC)}€ | {total.get(Tokens.USDC)}$")
-    self.logger.info(f"Runtime: {runtime_delta}")
-
-    seconds_in_year = 365 * 24 * 60 * 60
-    runtime_seconds = runtime_delta.total_seconds()
-
-    starting_total_usdc = (
-        self.starting_balance_eth * eth_price +
-        self.starting_balance_eurc * ask_price +
-        self.starting_balance_usdc
+    total_profit_usdc, apr, runtime_delta = self._compute_performance_metrics(
+      total_balances=total,
+      eurc_price=ask_price,
+      eth_price=eth_price
     )
-
-    if runtime_seconds > 0 and starting_total_usdc > 0:
-      apr = (total_profit_usdc / starting_total_usdc) * (seconds_in_year / runtime_seconds) * 100
-      self.logger.info(f"Current APR: {apr:.2f}%")
-    else:
-      self.logger.warning("Runtime too short to calculate APR.")
-
+    self._log_performance_summary(total, total_profit_usdc, apr, runtime_delta)
     self.logger.info(f"Rebalance Analysis: {result}")
 
     while True:
@@ -214,6 +186,11 @@ class UniswapArbitrageAnalyzer:
 
         profit_a = bid_uni - float(ask_coinbase.price)
         profit_b = float(bid_coinbase.price) - ask_uni
+
+        await self._send_periodic_report_if_due(
+          total_balances=self.account_manager.get_total_balances(),
+          eurc_price=float(ask_coinbase.price)
+        )
 
         if profit_a > 0:
           await self._process_opportunity(
@@ -319,7 +296,12 @@ class UniswapArbitrageAnalyzer:
         coinbase_balances=coinbase_balances
       )
     else:
-      self.logger.info("Add [ArbitrageExecuteTask] to queue...")
+      expected_quote_out = buy_outcome * (entry_price if is_cb_buy else avg_price_cb)
+      self.logger.info(
+        f"Add [ArbitrageExecuteTask] to queue | side={side} | in={buy_balance:.2f} USDC | "
+        f"out={buy_outcome:.4f} EURC | quote_out={expected_quote_out:.2f} USDC | "
+        f"profit={real_profit:.2f} USDC"
+      )
       self.executor.queue.append(ArbitrageExecuteTask(
         coinbase=self.coinbase,
         pool=self.pool,
@@ -328,7 +310,7 @@ class UniswapArbitrageAnalyzer:
         sell_coinbase_buy_uni=not is_cb_buy,
         t1_stat_amount=buy_balance,
         t1_expected_outcome=buy_outcome,
-        t2_expected_outcome=buy_outcome * (entry_price if is_cb_buy else avg_price_cb),
+        t2_expected_outcome=expected_quote_out,
         cb_price=avg_price_cb if is_cb_buy else entry_price,
         eth_price=eth_price,
         telegram=self.telegram
@@ -413,6 +395,76 @@ class UniswapArbitrageAnalyzer:
 
     self.logger.info(f"Profit (incl. costs): {real_profit:.2f}$")
 
+  async def _send_periodic_report_if_due(self, total_balances: dict[Tokens, float], eurc_price: float):
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if now_ts - self._last_report_ts < self.REPORT_INTERVAL_SECONDS:
+      return
+
+    eth_price = self.coinbase.get_eth_price()
+    total_profit_usdc, apr, runtime_delta = self._compute_performance_metrics(
+      total_balances=total_balances,
+      eurc_price=eurc_price,
+      eth_price=eth_price
+    )
+
+    task_snapshot = []
+    if self.runtime_state:
+      task_snapshot = self.runtime_state.get_task_snapshot()
+
+    self.logger.info(
+      f"Periodic Report | Runtime={runtime_delta} | APR={apr:.2f}% | Total Profit={total_profit_usdc:.2f} USDC "
+      f"| Tasks={task_snapshot if task_snapshot else '[]'}"
+    )
+
+    telegram_message = (
+      f"📊 5m Report\n"
+      f"Runtime: {runtime_delta}\n"
+      f"APR: {apr:.2f}%\n"
+      f"Total Profit: {total_profit_usdc:.2f} USDC\n"
+      f"Queue: {', '.join(task_snapshot) if task_snapshot else 'empty'}"
+    )
+    await self.telegram.native_send(telegram_message)
+    self._last_report_ts = now_ts
+
+  def _compute_performance_metrics(self, total_balances: dict[Tokens, float], eurc_price: float,
+                                   eth_price: float) -> tuple[float, float, str]:
+    current_date = datetime.now(timezone.utc)
+    if self.starting_date.tzinfo is None:
+      starting_date_aware = self.starting_date.replace(tzinfo=timezone.utc)
+    else:
+      starting_date_aware = self.starting_date
+
+    runtime_delta = current_date - starting_date_aware
+    runtime_seconds = runtime_delta.total_seconds()
+
+    profit_eth = total_balances.get(Tokens.ETH, 0.0) - self.starting_balance_eth
+    profit_eurc = total_balances.get(Tokens.EURC, 0.0) - self.starting_balance_eurc
+    profit_usdc = total_balances.get(Tokens.USDC, 0.0) - self.starting_balance_usdc
+
+    total_profit_usdc = profit_eth * eth_price + profit_eurc * eurc_price + profit_usdc
+
+    starting_total_usdc = (
+      self.starting_balance_eth * eth_price +
+      self.starting_balance_eurc * eurc_price +
+      self.starting_balance_usdc
+    )
+
+    if runtime_seconds <= 0 or starting_total_usdc <= 0:
+      return total_profit_usdc, 0.0, str(runtime_delta)
+
+    seconds_in_year = 365 * 24 * 60 * 60
+    apr = (total_profit_usdc / starting_total_usdc) * (seconds_in_year / runtime_seconds) * 100
+    return total_profit_usdc, apr, str(runtime_delta)
+
+  def _log_performance_summary(self, total_balances: dict[Tokens, float], total_profit_usdc: float,
+                               apr: float, runtime_delta: str):
+    self.logger.info(f"Total profit: {total_profit_usdc}$")
+    self.logger.info(f"balances @start: {self.starting_balance_eurc}€ | {self.starting_balance_usdc}$")
+    self.logger.info(
+      f"balances now: {total_balances.get(Tokens.EURC, 0.0)}€ | {total_balances.get(Tokens.USDC, 0.0)}$")
+    self.logger.info(f"Runtime: {runtime_delta}")
+    self.logger.info(f"Current APR: {apr:.2f}%")
+
   def _has_queued_task(self, task_type: type) -> bool:
     return any(isinstance(task, task_type) for task in self.executor.queue)
 
@@ -425,7 +477,7 @@ class UniswapArbitrageAnalyzer:
         self.logger.warning(
           f"Wallet balacne is too small: {wallet_bal}{t_needed_wallet.name}, check the trigger logik here ")
       dep_addr = self.coinbase.get_deposit_addresses(t_needed_cb, Network.ETH)
-      self.logger.info("Add [WalletWithdrawalTask] to queue...")
+      self.logger.info(f"Add [WalletWithdrawalTask] to queue | token={t_needed_cb.name} | amount={wallet_bal:.4f}")
       self.executor.queue.append(
         WalletWithdrawalTask(
           wallet_service=self.wallet_service,
@@ -442,7 +494,7 @@ class UniswapArbitrageAnalyzer:
       if cb_bal < 100:
         self.logger.warning(
           f"Coinbase balacne is too small: {cb_bal}{t_needed_cb.name}, check the trigger logik here ")
-      self.logger.info("Add [CoinbaseWithdrawalTask] to queue...")
+      self.logger.info(f"Add [CoinbaseWithdrawalTask] to queue | token={t_needed_wallet.name} | amount={cb_bal * 0.99:.4f}")
       self.executor.queue.append(
         CoinbaseWithdrawalTask(
           coinbase=self.coinbase,

@@ -37,21 +37,11 @@ class Application:
 
   def _build_tasks(self, config: RuntimeConfig) -> list[Awaitable[None]]:
     tasks: list[Awaitable[None]] = []
-
-    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if telegram_bot_token and telegram_chat_id:
-      telegram = TelegramServices(telegram_bot_token, telegram_chat_id)
-      tasks.append(ControlService(telegram, self.runtime_state).run())
-
-    if config.indexer_enabled:
-      tasks.append(asyncio.to_thread(IndexerService(self.db, self.runtime_state).run))
-
-    if config.uniswap_position_manager_enabled:
-      tasks.append(asyncio.to_thread(UniswapPositionAnalyzer(self.db, self.runtime_state).run))
+    executor: Executor | None = None
 
     if config.arbitrage_bot_enabled:
       executor = Executor(self.runtime_state)
+      self.runtime_state.register_task_snapshot_provider(executor.get_task_snapshot)
       tasks.append(executor.run())
 
       arbitrage_analyzer = UniswapArbitrageAnalyzer(
@@ -68,6 +58,18 @@ class Application:
         self.runtime_state,
       )
       tasks.append(arbitrage_analyzer.run())
+
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if telegram_bot_token and telegram_chat_id:
+      telegram = TelegramServices(telegram_bot_token, telegram_chat_id)
+      tasks.append(ControlService(telegram, self.runtime_state).run())
+
+    if config.indexer_enabled:
+      tasks.append(asyncio.to_thread(IndexerService(self.db, self.runtime_state).run))
+
+    if config.uniswap_position_manager_enabled:
+      tasks.append(asyncio.to_thread(UniswapPositionAnalyzer(self.db, self.runtime_state).run))
 
     return tasks
 
