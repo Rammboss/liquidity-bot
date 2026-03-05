@@ -285,10 +285,11 @@ class UniswapArbitrageAnalyzer:
       existing_token_on_wallet = Tokens.EURC
     wallet_transfer_fees = await self.wallet_service.get_transfer_costs(
       self.pool.get_token(existing_token_on_wallet), eth_price)
+    transfer_costs = cb_withdrawal_fee + wallet_transfer_fees if cb_rebasing_needed or wallet_rebasing_needed else 0
     if is_cb_buy:
-      trading_costs = (buy_balance * CB_FEE_RATE) + pool_swap_fees + cb_withdrawal_fee + wallet_transfer_fees
+      trading_costs = (buy_balance * CB_FEE_RATE) + pool_swap_fees + transfer_costs
     else:
-      trading_costs = (buy_outcome * CB_FEE_RATE) + pool_swap_fees + cb_withdrawal_fee + wallet_transfer_fees
+      trading_costs = (buy_outcome * CB_FEE_RATE) + pool_swap_fees + transfer_costs
 
     break_even = trading_costs / profit_raw
 
