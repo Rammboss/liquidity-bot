@@ -105,9 +105,9 @@ class ArbitrageExecuteTask(BasicTask):
 
     total_profit_in_usdc = profit_usdc + profit_eurc * self.cb_price + eth_fees_cost_usd
     self.execution_summary = (
-      f"✅ Arb done | PnL: {total_profit_in_usdc:.2f} USDC | "
-      f"USDC: {profit_usdc:.2f} | EURC: {profit_eurc:.2f} | Fee: ${eth_fees_cost_usd:.2f} | "
-      f"Liquidity(Pool): {self.pool_liquidity:.4f} | Volume(CB): {self.cb_available_volume:.4f}"
+      f"✅ Arb done | PnL: {total_profit_in_usdc:.2f} USDC\n"
+      f"USDC: {profit_usdc:.2f} | EURC: {profit_eurc:.2f} | Fee: ${eth_fees_cost_usd:.2f}\n"
+      f"Max drainable liquidity(Pool): {self.pool_liquidity:.4f} | Max drainable Volume(CB): {self.cb_available_volume:.4f}"
     )
     self.logger.info(self.execution_summary)
 
