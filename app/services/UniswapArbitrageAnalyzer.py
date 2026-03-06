@@ -429,7 +429,7 @@ class UniswapArbitrageAnalyzer:
     if self.runtime_state:
       task_snapshot = self.runtime_state.get_task_snapshot()
 
-    self.logger.info(
+    self.logger.debug(
       f"Periodic Report | Runtime={runtime_delta} | APR={apr:.2f}% | Total Profit={total_profit_usdc:.2f} USDC "
       f"| Tasks={task_snapshot if task_snapshot else '[]'}"
     )
@@ -444,7 +444,7 @@ class UniswapArbitrageAnalyzer:
     if task_snapshot:
       await self.telegram.native_send(telegram_message)
     else:
-      self.logger.info("Skip Telegram periodic report: no events/tasks in queue.")
+      self.logger.debug("Skip Telegram periodic report: no events/tasks in queue.")
 
     self._last_report_ts = now_ts
 
