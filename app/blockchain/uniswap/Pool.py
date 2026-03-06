@@ -73,14 +73,18 @@ class Pool:
   def get_volume_until_price(self, token_in: Token, min_price: float) -> float:
     """
     Estimate the maximum `token_in` volume tradable until the pool's marginal
-    price reaches `min_price` (token_out per token_in), using pool state,
-    liquidity and initialized ticks only (no quoter-orderbook stepping).
+    price reaches `min_price` in quote convention (token1 per token0).
+
+    Internally, swap stepping uses token_out-per-token_in. For token1 -> token0
+    trades we therefore invert `min_price` to keep the threshold in the correct
+    orientation.
     """
     if min_price <= 0:
       raise ValueError("min_price must be greater than 0")
 
     zero_for_one = token_in.address == self.token0.address
     token_out = self.token1 if zero_for_one else self.token0
+    min_price_token_out_per_token_in = min_price if zero_for_one else (1 / min_price)
 
     slot0 = self.pool_contract.functions.slot0().call()
     sqrt_price_x96 = int(slot0[0])
@@ -88,10 +92,10 @@ class Pool:
     liquidity = int(self.pool_contract.functions.liquidity().call())
 
     current_price = self._price_token_out_per_token_in(sqrt_price_x96, token_in, token_out)
-    if current_price <= min_price:
+    if current_price <= min_price_token_out_per_token_in:
       return 0.0
 
-    target_sqrt_x96 = self._target_sqrt_price_x96(min_price, zero_for_one)
+    target_sqrt_x96 = self._target_sqrt_price_x96(min_price_token_out_per_token_in, zero_for_one)
     q96 = float(2 ** 96)
     sqrt_current = sqrt_price_x96 / q96
     sqrt_target = target_sqrt_x96 / q96

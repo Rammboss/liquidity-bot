@@ -279,7 +279,10 @@ class UniswapArbitrageAnalyzer:
     sell_price = entry_price if is_cb_buy else avg_price_cb
     real_profit = (buy_outcome * sell_price - buy_balance) - trading_costs
 
-    liquidity_reference_price = entry_price if is_cb_buy else avg_price_cb
+    # Drain-until threshold must be the *counterparty* venue price where edge vanishes:
+    # - side A (CB buy, UNI sell): UNI bid can fall only down to CB average buy price
+    # - side B (UNI buy, CB sell): UNI ask can rise only up to CB average sell price
+    liquidity_reference_price = avg_price_cb
     liquidity_pool = self.pool.get_volume_until_price(
       self.pool.get_token(t_needed_wallet),
       liquidity_reference_price
