@@ -58,9 +58,26 @@ class ControlService:
     task_events = self.runtime_state.pop_task_events()
     if task_events:
       self.logger.info(f"Sending bundled task report with {len(task_events)} event(s) to Telegram.")
-      message = "🧾 Task Report (5m)\n" + "\n".join(f"{idx}. {event}" for idx, event in enumerate(task_events, start=1))
+
+      message_lines = ["🧾 Task Report (5m)"]
+      message_lines.extend(f"{idx}. {event}" for idx, event in enumerate(task_events, start=1))
+
+      performance_snapshot = self.runtime_state.get_performance_snapshot()
+      if performance_snapshot:
+        message_lines.extend([
+          "",
+          f"APU: {performance_snapshot['apu']:.2f}%",
+          f"Total Profit: {performance_snapshot['total_profit_usdc']:.2f} USDC",
+          (
+            "Current Balances: "
+            f"ETH={performance_snapshot['eth_balance']:.6f}, "
+            f"EURC={performance_snapshot['eurc_balance']:.2f}, "
+            f"USDC={performance_snapshot['usdc_balance']:.2f}"
+          )
+        ])
+
+      message = "\n".join(message_lines)
       await self.telegram.native_send(message)
     else:
       self.logger.info("Skip Telegram task report: no new task events.")
-
     self._last_task_report_at = now

@@ -167,6 +167,7 @@ class UniswapArbitrageAnalyzer:
       eurc_price=ask_price,
       eth_price=eth_price
     )
+    self._update_runtime_performance_snapshot(total, total_profit_usdc, apr)
     self._log_performance_summary(total, total_profit_usdc, apr, runtime_delta)
     self.logger.info(f"Rebalance Analysis: {result}")
 
@@ -424,6 +425,7 @@ class UniswapArbitrageAnalyzer:
       eurc_price=eurc_price,
       eth_price=eth_price
     )
+    self._update_runtime_performance_snapshot(total_balances, total_profit_usdc, apr)
 
     task_snapshot = []
     if self.runtime_state:
@@ -477,6 +479,20 @@ class UniswapArbitrageAnalyzer:
     seconds_in_year = 365 * 24 * 60 * 60
     apr = (total_profit_usdc / starting_total_usdc) * (seconds_in_year / runtime_seconds) * 100
     return total_profit_usdc, apr, str(runtime_delta)
+
+
+  def _update_runtime_performance_snapshot(self, total_balances: dict[Tokens, float],
+                                          total_profit_usdc: float, apu: float) -> None:
+    if not self.runtime_state:
+      return
+
+    self.runtime_state.set_performance_snapshot({
+      "apu": apu,
+      "total_profit_usdc": total_profit_usdc,
+      "eth_balance": total_balances.get(Tokens.ETH, 0.0),
+      "eurc_balance": total_balances.get(Tokens.EURC, 0.0),
+      "usdc_balance": total_balances.get(Tokens.USDC, 0.0),
+    })
 
   def _log_performance_summary(self, total_balances: dict[Tokens, float], total_profit_usdc: float,
                                apr: float, runtime_delta: str):
