@@ -148,6 +148,28 @@ class UniswapArbitrageAnalyzer:
     average_price_for_target = total_cost_for_target / matched_volume_for_target
     return average_price_for_target, total_volume_until_limit
 
+  def _resolve_cb_trade_size(self, is_cb_buy: bool, target_qty: float, usage: float,
+                             usdc_balance_total: float, eurc_balance_total: float,
+                             entry_price: float, cb_available_volume: float) -> tuple[float, float]:
+    """Return normalized trade sizes: (buy_balance_usdc, buy_outcome_eurc)."""
+    usdc_buy_capacity = min(target_qty, usdc_balance_total * usage)
+
+    if is_cb_buy:
+      planned_cb_qty = usdc_buy_capacity
+    else:
+      planned_cb_qty = min(target_qty, eurc_balance_total * usage, usdc_buy_capacity / entry_price)
+
+    effective_cb_qty = min(planned_cb_qty, cb_available_volume)
+
+    if is_cb_buy:
+      buy_balance = effective_cb_qty
+      buy_outcome = 0.0
+    else:
+      buy_outcome = effective_cb_qty
+      buy_balance = buy_outcome * entry_price
+
+    return buy_balance, buy_outcome
+
   async def run(self):
     self.logger.info("Starting Uniswap Arbitrage Analyzer...")
     wallet_balances = self.account_manager.get_wallet_balances()
@@ -243,8 +265,8 @@ class UniswapArbitrageAnalyzer:
       wallet_balances=wallet_balances,
       coinbase_balances=coinbase_balances
     )
-    buy_balance = min(target_qty, usdc_balance_total * usage)
-    target_quantity = buy_balance if is_cb_buy else min(target_qty, eurc_balance_total * usage)
+    usdc_buy_capacity = min(target_qty, usdc_balance_total * usage)
+    target_quantity = usdc_buy_capacity if is_cb_buy else min(target_qty, eurc_balance_total * usage, usdc_buy_capacity / entry_price)
     avg_price_cb, cb_available_volume = self.get_average_price(
       book_side=order_book_side,
       limit_price=entry_price,
@@ -252,11 +274,35 @@ class UniswapArbitrageAnalyzer:
       target_quantity=target_quantity
     )
 
-    if not avg_price_cb:
+    if not avg_price_cb or cb_available_volume <= 0:
       return
 
-    # Ergebnis-Menge (Outcome) berechnen
-    buy_outcome = buy_balance / (avg_price_cb if is_cb_buy else entry_price)
+    effective_target_quantity = min(target_quantity, cb_available_volume)
+    if effective_target_quantity <= 0:
+      return
+
+    if effective_target_quantity < target_quantity:
+      avg_price_cb_adjusted, _ = self.get_average_price(
+        book_side=order_book_side,
+        limit_price=entry_price,
+        is_ask=is_cb_buy,
+        target_quantity=effective_target_quantity
+      )
+      if not avg_price_cb_adjusted:
+        return
+      avg_price_cb = avg_price_cb_adjusted
+
+    buy_balance, buy_outcome = self._resolve_cb_trade_size(
+      is_cb_buy=is_cb_buy,
+      target_qty=target_qty,
+      usage=usage,
+      usdc_balance_total=usdc_balance_total,
+      eurc_balance_total=eurc_balance_total,
+      entry_price=entry_price,
+      cb_available_volume=effective_target_quantity
+    )
+    if is_cb_buy:
+      buy_outcome = buy_balance / avg_price_cb
 
     # 2. Kostenkalkulation (Zentralisiert)
     cb_withdrawal_fee = await self.coinbase.estimate_withdrawal_fees()
@@ -279,14 +325,9 @@ class UniswapArbitrageAnalyzer:
     sell_price = entry_price if is_cb_buy else avg_price_cb
     real_profit = (buy_outcome * sell_price - buy_balance) - trading_costs
 
-    # Drain-until threshold must be the *counterparty* venue price where edge vanishes:
-    # - side A (CB buy, UNI sell): UNI bid can fall only down to CB average buy price
-    # - side B (UNI buy, CB sell): UNI ask can rise only up to CB average sell price
-    liquidity_reference_price = avg_price_cb
-    liquidity_pool = self.pool.get_volume_until_price(
-      self.pool.get_token(t_needed_wallet),
-      liquidity_reference_price
-    )
+    # NOTE: Temporarily track only Coinbase executable volume.
+    # Uniswap pool-drain estimation is intentionally disabled for now.
+    liquidity_pool = 0.0
 
     self._log_opportunity_summary(
       side=side,
