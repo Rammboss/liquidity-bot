@@ -43,8 +43,7 @@ class TelegramServices:
       f"🔁 {tx2_0_amount:.2f} {tx2_0_symbol} → {tx2_1_amount:.2f} {tx2_1_symbol}\n"
       f"💰 Profit: {profit:.2f}"
     )
-    await self.bot.send_message(chat_id=self.chat_id, text=pretty_text, parse_mode=ParseMode.HTML)
-    self.last_sent_at = datetime.now(timezone.utc)
+    await self.native_send(pretty_text, parse_mode=ParseMode.HTML)
 
   async def mark_updates_as_seen(self):
     updates = await self.bot.get_updates(timeout=1)
