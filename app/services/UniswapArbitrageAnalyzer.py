@@ -113,9 +113,8 @@ class UniswapArbitrageAnalyzer:
     das gesamte ausführbare Volumen am Book bis zum Limitpreis.
 
     Returns:
-      tuple[float | None, float, float]:
+      tuple[float | None, float]:
         - average_price_for_target: VWAP der (Teil-)Ausführung für target_quantity
-        - matched_volume_for_target: tatsächlich genutztes Volumen für target_quantity
         - total_volume_until_limit: gesamtes verfügbares Volumen bis limit_price (unabhängig vom target)
     """
     matched_volume_for_target = 0.0
@@ -144,10 +143,10 @@ class UniswapArbitrageAnalyzer:
       remaining_qty -= take_qty
 
     if matched_volume_for_target == 0:
-      return None, 0.0, total_volume_until_limit
+      return None, total_volume_until_limit
 
     average_price_for_target = total_cost_for_target / matched_volume_for_target
-    return average_price_for_target, matched_volume_for_target, total_volume_until_limit
+    return average_price_for_target, total_volume_until_limit
 
   async def run(self):
     self.logger.info("Starting Uniswap Arbitrage Analyzer...")
@@ -245,14 +244,14 @@ class UniswapArbitrageAnalyzer:
     )
     buy_balance = min(target_qty, usdc_balance_total * usage)
     target_quantity = buy_balance if is_cb_buy else min(target_qty, eurc_balance_total * usage)
-    avg_price_cb, matched_volume, cb_available_volume = self.get_average_price(
+    avg_price_cb, cb_available_volume = self.get_average_price(
       book_side=order_book_side,
       limit_price=entry_price,
       is_ask=is_cb_buy,
       target_quantity=target_quantity
     )
 
-    if not avg_price_cb or matched_volume <= 0:
+    if not avg_price_cb:
       return
 
     # Ergebnis-Menge (Outcome) berechnen
