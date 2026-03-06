@@ -143,6 +143,49 @@ class Pool:
 
     return token_in.to_human(int(total_input_gross))
 
+  def get_volume_until_price_simple(self, token_in: Token, target_price: float, include_fee: bool = True) -> float:
+    """
+    Alternative volume estimation that follows the single-step swap math from common
+    Uniswap V3 examples.
+
+    This method assumes the swap does not cross initialized ticks and uses only the
+    current in-range liquidity:
+      - token0 in (zeroForOne):
+          sqrtP_next = (L * Q96 * sqrtP_cur) / (L * Q96 + amount_in_effective * sqrtP_cur)
+      - token1 in (oneForZero):
+          sqrtP_next = sqrtP_cur + (amount_in_effective * Q96) / L
+
+    If ``include_fee`` is True, the returned amount is gross input (what the user sends).
+    Otherwise it is effective input (what moves the price).
+    """
+    state = self.get_pool_state()
+    sqrt_price_x96 = state["sqrtPriceX96"]
+    liquidity = state["liquidity"]
+
+    if liquidity == 0:
+      return 0.0
+
+    zero_for_one = token_in.address == self.token0.address
+    target_sqrt_x96 = self._calculate_target_sqrt_x96(target_price, zero_for_one)
+
+    if zero_for_one and target_sqrt_x96 >= sqrt_price_x96:
+      return 0.0
+    if not zero_for_one and target_sqrt_x96 <= sqrt_price_x96:
+      return 0.0
+
+    amount_in_effective = self._compute_amount_in(
+      liquidity,
+      sqrt_price_x96,
+      target_sqrt_x96,
+      zero_for_one,
+    )
+
+    amount_in = amount_in_effective
+    if include_fee:
+      amount_in = math.ceil((amount_in_effective * 1_000_000) / (1_000_000 - self.fee))
+
+    return token_in.to_human(int(amount_in))
+
   def _compute_amount_in(self, liquidity: int, sqrt_a: int, sqrt_b: int, zero_for_one: bool) -> int:
     """Calculates Delta X (token0) or Delta Y (token1) for a price move."""
     if zero_for_one:
