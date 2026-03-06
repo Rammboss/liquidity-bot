@@ -59,7 +59,7 @@ async def main():
   pool = Pool(EURO_USDC_UNI_V3_POOL_ADDRESS)
   EURC = Token(Tokens.EURC)
 
-  test = pool.get_volume_until_price(EURC, 1.162)
+  test = pool.get_volume_until_price(EURC, 1.16)
   logger.info(f"TEst: {test}")
   # coinbase.get_eth_price() --->Passed
   # test2_before1 = coinbase.get_orders()

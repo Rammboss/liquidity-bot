@@ -1,3 +1,4 @@
+import math
 import os
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 
@@ -31,6 +32,7 @@ class Pool:
     self.token0 = Token(Tokens.from_address(self.pool_contract.functions.token0().call()))
     self.token1 = Token(Tokens.from_address(self.pool_contract.functions.token1().call()))
     self.fee = self.pool_contract.functions.fee().call()
+    self.tick_spacing = self.pool_contract.functions.tickSpacing().call()
 
     self.quoter = Contract.UNISWAP_V3_QUOTER.get_contract(self.w3, self.chain_id)
     self.wallet: LocalAccount = Account.from_key(os.getenv("PRIVATE_KEY"))
@@ -74,186 +76,133 @@ class Pool:
 
   def get_volume_until_price(self, token_in: Token, min_price: float) -> float:
     """
-    Estimate the maximum `token_in` volume tradable until the pool's marginal
-    price reaches `min_price` in quote convention (token1 per token0).
-
-    Internally, swap stepping uses token_out-per-token_in. For token1 -> token0
-    trades we therefore invert `min_price` to keep the threshold in the correct
-    orientation.
+    Calculates volume until min_price, matching the pool's internal swap logic.
+    This considers the fee being deducted from input BEFORE the price move.
     """
-    if min_price <= 0:
-      raise ValueError("min_price must be greater than 0")
+    state = self.get_pool_state()
+    sqrt_price_x96 = state["sqrtPriceX96"]
+    current_tick = state["tick"]
+    liquidity = state["liquidity"]
 
     zero_for_one = token_in.address == self.token0.address
-    token_out = self.token1 if zero_for_one else self.token0
-    min_price_token_out_per_token_in = min_price if zero_for_one else (1 / min_price)
+    target_sqrt_x96 = self._calculate_target_sqrt_x96(min_price, zero_for_one)
 
-    slot0 = self.pool_contract.functions.slot0().call()
-    sqrt_price_x96 = int(slot0[0])
-    current_tick = int(slot0[1])
-    liquidity = int(self.pool_contract.functions.liquidity().call())
+    # Basic check: are we already at/past the price?
+    if zero_for_one and target_sqrt_x96 >= sqrt_price_x96: return 0.0
+    if not zero_for_one and target_sqrt_x96 <= sqrt_price_x96: return 0.0
 
-    current_price = self._price_token_out_per_token_in(sqrt_price_x96, token_in, token_out)
-    if current_price <= min_price_token_out_per_token_in:
-      return 0.0
+    total_input_gross = 0
+    current_sqrt_x96 = sqrt_price_x96
 
-    target_sqrt_x96 = self._target_sqrt_price_x96(min_price_token_out_per_token_in, zero_for_one)
+    # Fee in parts per million (e.g., 3000 for 0.3%)
+    fee_pips = self.fee
 
-    fee_tier = self.fee / 1_000_000
-    fee_factor = 1.0 - fee_tier
-    if fee_factor <= 0:
-      raise ValueError("Invalid pool fee configuration")
+    while True:
+      if liquidity == 0: break
 
-    q96 = 2 ** 96
-    sqrt_current_x96 = sqrt_price_x96
-    amount_in_raw_effective = 0
-    tick_spacing = int(self.pool_contract.functions.tickSpacing().call())
+      next_tick = self._get_next_initialized_tick(current_tick, zero_for_one)
+      step_sqrt_x96 = self._tick_to_sqrt_price_x96(next_tick)
 
-    for _ in range(2000):
-      if liquidity <= 0:
-        break
-
-      if zero_for_one and sqrt_current_x96 <= target_sqrt_x96:
-        break
-      if (not zero_for_one) and sqrt_current_x96 >= target_sqrt_x96:
-        break
-
-      next_tick = self._next_initialized_tick(current_tick, tick_spacing, zero_for_one)
-      next_tick_sqrt_x96 = self._sqrt_ratio_at_tick_x96(next_tick)
-
+      # Determine limit for this step
       if zero_for_one:
-        sqrt_next_x96 = max(target_sqrt_x96, next_tick_sqrt_x96)
-        amount_step = (liquidity * (sqrt_current_x96 - sqrt_next_x96) * q96) // (sqrt_current_x96 * sqrt_next_x96)
+        limit_sqrt_x96 = max(step_sqrt_x96, target_sqrt_x96)
       else:
-        sqrt_next_x96 = min(target_sqrt_x96, next_tick_sqrt_x96)
-        amount_step = (liquidity * (sqrt_next_x96 - sqrt_current_x96)) // q96
+        limit_sqrt_x96 = min(step_sqrt_x96, target_sqrt_x96)
 
-      if amount_step < 0:
-        amount_step = 0
+      # 1. Calculate the 'Effective' amount_in needed to reach the limit
+      # This is the amount that actually shifts the price (after fees)
+      amount_in_effective = self._compute_amount_in(
+        liquidity, current_sqrt_x96, limit_sqrt_x96, zero_for_one
+      )
 
-      amount_in_raw_effective += amount_step
-      reached_tick_boundary = sqrt_next_x96 == next_tick_sqrt_x96
-      sqrt_current_x96 = sqrt_next_x96
+      # 2. Scale up to include the fee for this specific step
+      # Calculation: gross = effective / (1 - fee)
+      # In Solidity terms: amount_in = (amount_in_effective * 1e6) / (1e6 - fee_pips)
+      step_amount_in_gross = math.ceil((amount_in_effective * 1_000_000) / (1_000_000 - fee_pips))
 
-      if not reached_tick_boundary:
+      total_input_gross += step_amount_in_gross
+      current_sqrt_x96 = limit_sqrt_x96
+
+      # If we reached our target price, we are done
+      if current_sqrt_x96 == target_sqrt_x96:
         break
 
-      tick_info = self.pool_contract.functions.ticks(next_tick).call()
-      liquidity_net = int(tick_info[1])
+      # If we reached a tick, cross it
+      if current_sqrt_x96 == step_sqrt_x96:
+        tick_info = self.pool_contract.functions.ticks(next_tick).call()
+        liquidity_net = tick_info[1]
 
-      if zero_for_one:
-        liquidity -= liquidity_net
-        current_tick = next_tick - 1
+        if zero_for_one:
+          liquidity -= liquidity_net
+        else:
+          liquidity += liquidity_net
+
+        current_tick = next_tick - 1 if zero_for_one else next_tick
       else:
-        liquidity += liquidity_net
-        current_tick = next_tick
+        break
 
-    amount_in_raw_gross = amount_in_raw_effective / fee_factor
-    return token_in.to_human(int(amount_in_raw_gross))
+    return token_in.to_human(int(total_input_gross))
 
-  def _price_token_out_per_token_in(self, sqrt_price_x96: int, token_in: Token, token_out: Token) -> float:
-    q96 = float(2 ** 96)
-    sqrt_price = sqrt_price_x96 / q96
-    price_token1_per_token0 = (sqrt_price ** 2) * (10 ** (self.token0.decimals - self.token1.decimals))
-
-    if token_in.address == self.token0.address and token_out.address == self.token1.address:
-      return price_token1_per_token0
-
-    return 1 / price_token1_per_token0
-
-  def _target_sqrt_price_x96(self, min_price: float, zero_for_one: bool) -> int:
+  def _compute_amount_in(self, liquidity: int, sqrt_a: int, sqrt_b: int, zero_for_one: bool) -> int:
+    """Calculates Delta X (token0) or Delta Y (token1) for a price move."""
     if zero_for_one:
-      price_token1_per_token0 = Decimal(str(min_price))
+      # Delta X = L * (sqrt_a - sqrt_b) / (sqrt_a * sqrt_b)
+      num = (liquidity << 96) * abs(sqrt_a - sqrt_b)
+      den = sqrt_a * sqrt_b
+      return num // den
     else:
-      price_token1_per_token0 = Decimal("1") / Decimal(str(min_price))
+      # Delta Y = L * (sqrt_b - sqrt_a)
+      return (liquidity * abs(sqrt_b - sqrt_a)) >> 96
 
-    ratio_raw = price_token1_per_token0 * (Decimal(10) ** (self.token1.decimals - self.token0.decimals))
-    sqrt_ratio = ratio_raw.sqrt()
-    return int((sqrt_ratio * (Decimal(2) ** 96)).to_integral_value(rounding=ROUND_HALF_UP))
+  def _calculate_target_sqrt_x96(self, min_price: float, zero_for_one: bool) -> int:
+    # Adjustment for decimal differences: price = (1.0001^tick) * 10^(d0-d1)
+    decimal_adj = 10 ** (self.token1.decimals - self.token0.decimals)
 
-  def _sqrt_ratio_at_tick_x96(self, tick: int) -> int:
-    """Exact TickMath port from Uniswap V3 Core (returns Q64.96 sqrt ratio)."""
-    if tick < -887272 or tick > 887272:
-      raise ValueError("Tick out of bounds")
-
-    abs_tick = -tick if tick < 0 else tick
-    ratio = 0x100000000000000000000000000000000
-
-    if abs_tick & 0x1:
-      ratio = (ratio * 0xfffcb933bd6fad37aa2d162d1a594001) >> 128
-    if abs_tick & 0x2:
-      ratio = (ratio * 0xfff97272373d413259a46990580e213a) >> 128
-    if abs_tick & 0x4:
-      ratio = (ratio * 0xfff2e50f5f656932ef12357cf3c7fdcc) >> 128
-    if abs_tick & 0x8:
-      ratio = (ratio * 0xffe5caca7e10e4e61c3624eaa0941cd0) >> 128
-    if abs_tick & 0x10:
-      ratio = (ratio * 0xffcb9843d60f6159c9db58835c926644) >> 128
-    if abs_tick & 0x20:
-      ratio = (ratio * 0xff973b41fa98c081472e6896dfb254c0) >> 128
-    if abs_tick & 0x40:
-      ratio = (ratio * 0xff2ea16466c96a3843ec78b326b52861) >> 128
-    if abs_tick & 0x80:
-      ratio = (ratio * 0xfe5dee046a99a2a811c461f1969c3053) >> 128
-    if abs_tick & 0x100:
-      ratio = (ratio * 0xfcbe86c7900a88aedcffc83b479aa3a4) >> 128
-    if abs_tick & 0x200:
-      ratio = (ratio * 0xf987a7253ac413176f2b074cf7815e54) >> 128
-    if abs_tick & 0x400:
-      ratio = (ratio * 0xf3392b0822b70005940c7a398e4b70f3) >> 128
-    if abs_tick & 0x800:
-      ratio = (ratio * 0xe7159475a2c29b7443b29c7fa6e889d9) >> 128
-    if abs_tick & 0x1000:
-      ratio = (ratio * 0xd097f3bdfd2022b8845ad8f792aa5825) >> 128
-    if abs_tick & 0x2000:
-      ratio = (ratio * 0xa9f746462d870fdf8a65dc1f90e061e5) >> 128
-    if abs_tick & 0x4000:
-      ratio = (ratio * 0x70d869a156d2a1b890bb3df62baf32f7) >> 128
-    if abs_tick & 0x8000:
-      ratio = (ratio * 0x31be135f97d08fd981231505542fcfa6) >> 128
-    if abs_tick & 0x10000:
-      ratio = (ratio * 0x9aa508b5b7a84e1c677de54f3e99bc9) >> 128
-    if abs_tick & 0x20000:
-      ratio = (ratio * 0x5d6af8dedb81196699c329225ee604) >> 128
-    if abs_tick & 0x40000:
-      ratio = (ratio * 0x2216e584f5fa1ea926041bedfe98) >> 128
-    if abs_tick & 0x80000:
-      ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128
-
-    if tick > 0:
-      ratio = ((1 << 256) - 1) // ratio
-
-    return (ratio >> 32) + (1 if (ratio & ((1 << 32) - 1)) else 0)
-
-  def _next_initialized_tick(self, current_tick: int, tick_spacing: int, zero_for_one: bool) -> int:
-    compressed = current_tick // tick_spacing
     if zero_for_one:
+      # Price provided is token1 per token0
+      price_ratio = min_price / decimal_adj
+    else:
+      # Input is token1, price provided is token0 per token1. Invert for pool ratio.
+      price_ratio = (1 / min_price) / decimal_adj
+
+    return int(math.sqrt(price_ratio) * (2 ** 96))
+
+  def _tick_to_sqrt_price_x96(self, tick: int) -> int:
+    return int((1.0001 ** (tick / 2)) * (2 ** 96))
+
+  def _get_next_initialized_tick(self, current_tick: int, zero_for_one: bool) -> int:
+    """Finds the next initialized tick using the TickBitmap contract function."""
+    compressed = current_tick // self.tick_spacing
+
+    if zero_for_one:
+      # Moving down (selling token0)
       word_pos = (compressed - 1) >> 8
       bit_pos = (compressed - 1) & 0xFF
-      for _ in range(4000):
-        bitmap = int(self.pool_contract.functions.tickBitmap(word_pos).call())
+      for _ in range(100):  # Limit iterations for performance
+        bitmap = self.pool_contract.functions.tickBitmap(word_pos).call()
         mask = (1 << (bit_pos + 1)) - 1
         masked = bitmap & mask
         if masked:
           next_bit = masked.bit_length() - 1
-          return ((word_pos << 8) + next_bit) * tick_spacing
+          return ((word_pos << 8) + next_bit) * self.tick_spacing
         word_pos -= 1
         bit_pos = 255
-      return -887272
-
-    word_pos = (compressed + 1) >> 8
-    bit_pos = (compressed + 1) & 0xFF
-    for _ in range(4000):
-      bitmap = int(self.pool_contract.functions.tickBitmap(word_pos).call())
-      mask = ~((1 << bit_pos) - 1) & ((1 << 256) - 1)
-      masked = bitmap & mask
-      if masked:
-        lsb = masked & -masked
-        next_bit = lsb.bit_length() - 1
-        return ((word_pos << 8) + next_bit) * tick_spacing
-      word_pos += 1
-      bit_pos = 0
-    return 887272
+      return -887272  # Minimum tick boundary
+    else:
+      # Moving up (selling token1)
+      word_pos = (compressed + 1) >> 8
+      bit_pos = (compressed + 1) & 0xFF
+      for _ in range(100):
+        bitmap = self.pool_contract.functions.tickBitmap(word_pos).call()
+        mask = ~((1 << bit_pos) - 1) & ((1 << 256) - 1)
+        masked = bitmap & mask
+        if masked:
+          lsb = masked & -masked
+          next_bit = lsb.bit_length() - 1
+          return ((word_pos << 8) + next_bit) * self.tick_spacing
+        word_pos += 1
+        bit_pos = 0
+      return 887272  # Maximum tick boundary
 
   def get_token(self, token: Tokens) -> Token:
     if token.to_address(self.chain_id) == self.token0.address:

@@ -45,7 +45,7 @@ class RebalanceResult:
 
 class UniswapArbitrageAnalyzer:
   CB_FEE_RATE = 0.00001
-  DEFAULT_USAGE_RATIO = 0.95
+  DEFAULT_USAGE_RATIO = 0.92
   REPORT_INTERVAL_SECONDS = 300
 
   def __init__(
@@ -282,6 +282,7 @@ class UniswapArbitrageAnalyzer:
       return
 
     if effective_target_quantity < target_quantity:
+      self.logger.info(f"Target quantity {target_quantity}less than effective quantity: {effective_target_quantity}, recalc")
       avg_price_cb_adjusted, _ = self.get_average_price(
         book_side=order_book_side,
         limit_price=entry_price,
@@ -324,10 +325,11 @@ class UniswapArbitrageAnalyzer:
     # Real Profit: Was kommt am Ende raus minus was haben wir reingesteckt minus Kosten
     sell_price = entry_price if is_cb_buy else avg_price_cb
     real_profit = (buy_outcome * sell_price - buy_balance) - trading_costs
-
-    # NOTE: Temporarily track only Coinbase executable volume.
-    # Uniswap pool-drain estimation is intentionally disabled for now.
-    liquidity_pool = 0.0
+    liquidity_reference_price = entry_price if is_cb_buy else avg_price_cb
+    liquidity_pool = self.pool.get_volume_until_price(
+      self.pool.get_token(t_needed_wallet),
+      liquidity_reference_price
+    )
 
     self._log_opportunity_summary(
       side=side,
