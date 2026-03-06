@@ -55,7 +55,7 @@ class WalletWithdrawalTask(BasicTask):
 
     latest_block = self.w3.eth.get_block('latest')
     base_fee = latest_block['baseFeePerGas']
-    prio_fee = self.w3.to_wei(0.005, 'gwei')
+    prio_fee = self.w3.to_wei(0.01, 'gwei')
     max_fee_per_gas = int(base_fee * 1.125) + prio_fee
 
     tx = self.send_token.contract.functions.transfer(

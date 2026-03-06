@@ -85,6 +85,8 @@ class Executor:
           if len(parallel_tasks) == 2:
             await self._run_tasks_parallel(parallel_tasks)
             continue
+          else:
+            self.logger.warning(f"Too many withdrawal tasks in queue, count: {len(parallel_tasks)}.")
 
           task = self.queue[-1]
           self.logger.info(f"Starting task {task.__class__.__name__} with priority {task.priority}")
